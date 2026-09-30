@@ -124,6 +124,40 @@ filters, pass/fail reasons and regime breakdown) and `results/tournament.md`.
 `apply_winners(results, strategy_path)` updates the `assets` in the CONFIG block and rewrites the
 WINNERS and TOURNAMENT sections of `strategy.md`, using `Strategy.describe()`.
 
+`bot/backtest/portfolio.py` provides
+`run_portfolio(bars_by_symbol, strategies_by_symbol, cfg: StrategyConfig, start, end) -> PortfolioResult`.
+It runs one shared-capital backtest across every winner. Each symbol is sized with the same rules
+as the live bot, and new entries are shrunk to respect `max_total_exposure_pct`. The result
+carries the equity series, the trades, and whether the kill switch or the daily loss limit would
+have fired.
+
+`results/tournament.json` schema. The dashboard, the final check and the README read this file.
+Floats are rounded to 4 decimals, `inf` becomes `null`, and dates are ISO strings.
+```json
+{
+  "generated_at": "2026-09-30T20:00:00Z",
+  "data": {"SPY": {"first": "2014-09-17", "last": "2026-09-29", "bars": 3026}, "...": {}},
+  "config": {"in_sample": ["..",".."], "out_of_sample": ["..",".."], "filters": {}, "risk": {},
+             "slippage_bps": {}, "fee_bps": {}},
+  "n_configs": 90,
+  "runs": [{
+      "symbol": "SPY", "strategy": "trend", "label": "trend(atr_mult=3,fast=50,slow=200)", "params": {},
+      "in_sample": {"<metrics keys>": 0}, "out_of_sample": {}, "full": {},
+      "passed": false, "fail_reasons": ["OOS win_rate 0.35 < 0.40"], "score": 0.0,
+      "regimes": {"trend": {"bull": {"return_pct": 0, "max_dd_pct": 0, "trades": 0}, "bear": {}, "sideways": {}},
+                  "vol": {"high": {}, "low": {}}, "stress": {"covid_crash_2020": {}}},
+      "approvals": {"entry_orders": 0, "needing_approval": 0}
+  }],
+  "winners": {"SPY": {"label": "", "strategy": "", "params": {}, "rules": {"entry": "", "exit": "",
+                "stop_loss": "", "take_profit": "", "timeframe": ""}, "score": 0.0}, "BTC/USD": null},
+  "portfolio": {"window": "full|out_of_sample", "metrics": {}, "regimes": {},
+                "kill_switch_would_fire": [{"date": "", "reason": ""}], "daily_loss_limit_hits": 0,
+                "equity": [["2022-01-03", 10000.0]]},
+  "winner_equity": {"SPY": [["2014-09-19", 10000.0]]}
+}
+```
+Equity arrays are downsampled to weekly closes to keep the file small.
+
 ### `bot/jev.py`
 ```python
 class JevClient(Protocol):
