@@ -1,0 +1,10 @@
+[project]
+name = "trading-bot"
+version = "0.1.0"
+description = "Paper-first trading bot: Opus designs the rules, Jev scores live setups, Alpaca executes."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
