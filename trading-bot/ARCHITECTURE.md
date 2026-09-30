@@ -114,9 +114,15 @@ regime, per vol regime and per stress window.
 ### `bot/backtest/tournament.py`
 `run_tournament(cfg: StrategyConfig, symbols) -> dict` runs every strategy × every grid point ×
 every symbol on the in-sample and out-of-sample windows. It applies `tournament.filters` to both
-windows. Survivors pass every filter in both windows, where `min_trades` applies per window. It
-ranks survivors by out-of-sample Calmar ratio (CAGR / max DD), then by win rate. It picks one
-winner per symbol, or none, in which case that asset stays disabled. It then runs a combined
+windows. Survivors pass every filter in both windows, where `min_trades` applies per window.
+
+Survivors are ranked by **in-sample** Calmar ratio (CAGR / max DD), then by in-sample win rate.
+The out-of-sample window is only a pass/fail check and never ranks. Ranking on it would turn it
+into training data. The tournament picks one winner per symbol, or none, in which case that asset
+stays disabled. Each run also reports `neighbors_passing`: the share of the same strategy's
+neighbouring grid points (the other grid points that differ from it in exactly one parameter)
+that also survive. That share is a robustness hint, not a ranking input. The report states how
+many configurations were tested, so readers can weigh the multiple-testing risk. It then runs a combined
 portfolio backtest of the winners on shared capital, with the total exposure cap applied.
 
 `write_results(results, out_dir="results")` writes `results/tournament.json` (every run's metrics,
