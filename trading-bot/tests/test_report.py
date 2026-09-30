@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from bot.config import load_settings
+from bot.config import AssetRule, load_settings
 from bot.models import JevDecision, OrderIntent, OrderPurpose, OrderResult, PositionState, Side, Trade
 from bot.report import daily_report, report_path
 from bot.store import Store
@@ -94,9 +94,15 @@ def seed(store: Store, settings) -> None:
     )
 
 
+def pinned_assets(cfg, enabled=()):
+    """A copy of cfg whose assets don't depend on what the last tournament wrote to strategy.md."""
+    cfg = cfg.model_copy(deep=True)
+    cfg.assets = {s: AssetRule(enabled=s in enabled, strategy="trend") for s in ("SPY", "QQQ", "BTC/USD")}
+    return cfg
+
+
 def test_report_with_seeded_data(store, settings, strategy_cfg):
-    cfg = strategy_cfg.model_copy(deep=True)
-    cfg.assets["SPY"].enabled = True
+    cfg = pinned_assets(strategy_cfg, enabled=("SPY",))
     seed(store, settings)
 
     text = daily_report(store, settings, cfg, DAY)
@@ -148,7 +154,7 @@ def test_report_with_seeded_data(store, settings, strategy_cfg):
 
 
 def test_report_empty_day(store, settings, strategy_cfg):
-    text = daily_report(store, settings, strategy_cfg, "2026-09-29")
+    text = daily_report(store, settings, pinned_assets(strategy_cfg), "2026-09-29")
 
     assert "No trades today." in section(text, "Trades today")
     assert "No open positions." in section(text, "Open positions (now)")

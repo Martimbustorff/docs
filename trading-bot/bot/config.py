@@ -171,16 +171,54 @@ def load_strategy(path: Path | str = STRATEGY_PATH) -> StrategyConfig:
 
 
 def write_config_block(data: dict[str, Any], path: Path | str = STRATEGY_PATH) -> None:
-    """Replace the YAML inside the CONFIG block, validating first so a bad write never lands."""
+    """Replace the YAML inside the CONFIG block, validating first so a bad write never lands.
+
+    Only the top-level sections whose values changed are re-serialised; the others keep their
+    hand-written text (comments, folded strings, flow mappings).
+    """
     StrategyConfig.model_validate(data)
     path = Path(path)
     text = path.read_text()
     start, end = text.find(CONFIG_BEGIN), text.find(CONFIG_END)
     if start < 0 or end < 0:
         raise ConfigError("strategy.md has no CONFIG block to replace")
-    dumped = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
-    new_block = f"{CONFIG_BEGIN}\n\n```yaml\n{dumped}```\n\n"
+    yaml_text = _merge_yaml_sections(text[start + len(CONFIG_BEGIN) : end], data)
+    if yaml.safe_load(yaml_text) != data:  # the splice must reproduce `data` exactly
+        yaml_text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
+    new_block = f"{CONFIG_BEGIN}\n\n```yaml\n{yaml_text}```\n\n"
     path.write_text(text[:start] + new_block + text[end:])
+
+
+def _merge_yaml_sections(block: str, data: dict[str, Any]) -> str:
+    """The existing YAML with each changed top-level key re-dumped in place; new keys appended."""
+    match = re.search(r"```ya?ml\n(.*?)```", block, re.S)
+    if not match:
+        return yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
+    old_text = match.group(1)
+    old = yaml.safe_load(old_text) or {}
+    sections: dict[str, str] = {}
+    order: list[str] = []
+    current: str | None = None
+    for line in old_text.splitlines(keepends=True):
+        key = re.match(r"([A-Za-z_][\w/]*):", line)
+        if key:
+            current = key.group(1)
+            order.append(current)
+            sections[current] = ""
+        if current is not None:
+            sections[current] += line
+    out = []
+    for key in order:
+        if key not in data:
+            continue
+        if old.get(key) == data[key]:
+            out.append(sections[key])
+        else:
+            out.append(yaml.safe_dump({key: data[key]}, sort_keys=False, allow_unicode=True, width=100))
+    for key in data:
+        if key not in sections:
+            out.append(yaml.safe_dump({key: data[key]}, sort_keys=False, allow_unicode=True, width=100))
+    return "".join(out)
 
 
 def replace_section(name: str, markdown: str, path: Path | str = STRATEGY_PATH) -> None:

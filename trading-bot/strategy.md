@@ -46,7 +46,60 @@ These rules exist before any strategy runs. The code enforces them. They are not
 
 <!-- BEGIN WINNERS -->
 
-The tournament hasn't run yet. Run `python -m bot tournament` to fill this section.
+_Written by `python -m bot tournament --apply` from the run of 2026-09-30T20:04:29Z._
+
+The tournament enabled 3 of 3 assets: SPY, QQQ, BTC/USD. The bot trades each enabled asset with the one configuration below, long only. An asset without a winner stays disabled, and the bot doesn't trade it until a future tournament finds one.
+
+### SPY: Donchian breakout
+
+`breakout(atr_mult=3,entry_n=20,exit_n=10)` passed every filter in both windows and ranked first of 23 survivors on in-sample Calmar ratio (0.83). Of its 3 grid neighbours (one parameter different), 3 also survive.
+
+Over the full period it placed about 5 entries a year, and 98% of them were above $1,000, so expect to approve most entries in Telegram.
+
+- **Entry:** Buy at the next open when the close is above the highest high of the previous 20 days.
+- **Exit:** Sell at the next open when the close is below the lowest low of the previous 10 days.
+- **Stop loss:** Starts at the signal day's close minus 3 × ATR(14). After every close it moves up to the lowest low of the previous 10 days when that is higher, and it is never lowered.
+- **Take profit:** None. The trailing channel stop and the exit rule take the profit.
+- **Timeframe:** Daily bars closing at 16:00 New York time. Signals use the completed bar's close; orders fill at the next bar's open.
+
+| Window | Return | CAGR | Max drawdown | Win rate | Profit factor | Trades | Buy and hold |
+|---|---|---|---|---|---|---|---|
+| In-sample, 2014-09-17 to 2021-12-31 | +12.3% | +1.61% | 1.9% | 0.53 | 3.02 | 40 | +172.3% |
+| Out-of-sample, 2022-01-01 to 2026-09-29 | +8.3% | +1.70% | 2.5% | 0.56 | 2.47 | 25 | +70.4% |
+
+### QQQ: Time-series momentum
+
+`momentum(atr_mult=3,lookback=252)` passed every filter in both windows and ranked first of 17 survivors on in-sample Calmar ratio (0.92). Of its 3 grid neighbours (one parameter different), 3 also survive.
+
+Over the full period it placed about 6 entries a year, and 100% of them were above $1,000, so expect to approve most entries in Telegram.
+
+- **Entry:** Buy at the next open when the close is higher than it was 252 days ago, the close is above its 50-day average, and 20-day realized volatility is below the 90th percentile of its last 252 days.
+- **Exit:** Sell at the next open when the close is lower than it was 252 days ago.
+- **Stop loss:** Trailing stop at the highest close since entry minus 3 × ATR(14), recomputed after every close and never lowered. It starts at the signal day's close minus 3 × ATR(14).
+- **Take profit:** None. The trailing stop and the exit rule take the profit.
+- **Timeframe:** Daily bars closing at 16:00 New York time. Signals use the completed bar's close; orders fill at the next bar's open.
+
+| Window | Return | CAGR | Max drawdown | Win rate | Profit factor | Trades | Buy and hold |
+|---|---|---|---|---|---|---|---|
+| In-sample, 2014-09-17 to 2021-12-31 | +19.2% | +2.44% | 2.7% | 0.49 | 2.45 | 49 | +325.9% |
+| Out-of-sample, 2022-01-01 to 2026-09-29 | +11.8% | +2.38% | 3.0% | 0.48 | 2.55 | 27 | +89.0% |
+
+### BTC/USD: Time-series momentum
+
+`momentum(atr_mult=3,lookback=120)` passed every filter in both windows and ranked first of 8 survivors on in-sample Calmar ratio (1.43). Of its 3 grid neighbours (one parameter different), 1 also survives.
+
+Over the full period it placed about 9 entries a year, and 83% of them were above $1,000, so expect to approve most entries in Telegram.
+
+- **Entry:** Buy at the next open when the close is higher than it was 120 days ago, the close is above its 50-day average, and 20-day realized volatility is below the 90th percentile of its last 252 days.
+- **Exit:** Sell at the next open when the close is lower than it was 120 days ago.
+- **Stop loss:** Trailing stop at the highest close since entry minus 3 × ATR(14), recomputed after every close and never lowered. It starts at the signal day's close minus 3 × ATR(14).
+- **Take profit:** None. The trailing stop and the exit rule take the profit.
+- **Timeframe:** Daily bars closing at 00:00 UTC. Signals use the completed bar's close; orders fill at the next bar's open.
+
+| Window | Return | CAGR | Max drawdown | Win rate | Profit factor | Trades | Buy and hold |
+|---|---|---|---|---|---|---|---|
+| In-sample, 2014-09-17 to 2021-12-31 | +85.1% | +8.81% | 6.1% | 0.48 | 4.55 | 66 | +10025.3% |
+| Out-of-sample, 2022-01-01 to 2026-09-29 | +7.6% | +1.56% | 5.6% | 0.41 | 1.75 | 37 | +75.4% |
 
 <!-- END WINNERS -->
 
@@ -73,7 +126,28 @@ money and leak hindsight. See the final check for how that gap is handled.
 
 <!-- BEGIN TOURNAMENT -->
 
-Not run yet.
+_Last run: 2026-09-30T20:04:29Z. Read `results/tournament.md` for every run, the regime and stress tables and the caveats, and `results/tournament.json` for the raw numbers._
+
+The tournament backtested 90 configurations on daily bars: 4 strategies, each over its parameter grid, on SPY, QQQ, BTC/USD. A configuration survives only if it passes every filter in both the in-sample window (2014-09-17 to 2021-12-31) and the out-of-sample window (2022-01-01 to 2026-09-29): max drawdown at most 15%, win rate at least 0.40, profit factor at least 1.2, at least 8 trades, and a positive return in-sample and out-of-sample. The tournament ranks survivors by in-sample Calmar ratio (CAGR / max drawdown), then in-sample win rate. The out-of-sample window only passes or fails a configuration.
+
+### Leaderboard
+
+| Asset | Survivors | Winner | IS Calmar | IS return | IS max DD | OOS return | OOS max DD | OOS trades |
+|---|---|---|---|---|---|---|---|---|
+| SPY | 23 of 30 | `breakout(atr_mult=3,entry_n=20,exit_n=10)` | 0.83 | +12.3% | 1.9% | +8.3% | 2.5% | 25 |
+| QQQ | 17 of 30 | `momentum(atr_mult=3,lookback=252)` | 0.92 | +19.2% | 2.7% | +11.8% | 3.0% | 27 |
+| BTC/USD | 8 of 30 | `momentum(atr_mult=3,lookback=120)` | 1.43 | +85.1% | 6.1% | +7.6% | 5.6% | 37 |
+
+### Winners traded together
+
+One shared account, with the total exposure cap, the daily loss limit and the kill-switch drawdown applied.
+
+| Window | Return | CAGR | Max drawdown | Sharpe | Trades | Win rate | Time invested | Kill switch would fire | Daily loss limit days |
+|---|---|---|---|---|---|---|---|---|---|
+| Out-of-sample, 2022-01-01 to 2026-09-29 | +29.8% | +5.65% | 5.7% | 1.02 | 89 | 0.47 | 69% | never | 2 |
+| Full period, 2014-09-17 to 2026-09-29 | +184.6% | +9.08% | 6.1% | 1.59 | 243 | 0.49 | 74% | never | 3 |
+
+Only the out-of-sample row is a fair estimate: the full period includes the years the winners were picked on. With 90 configurations tested, some survivors pass by luck. Treat these numbers as an optimistic upper bound, and compare them with paper trading before you trust them.
 
 <!-- END TOURNAMENT -->
 
@@ -94,17 +168,24 @@ version: 1
 timeframe: 1d
 assets:
   SPY:
-    enabled: false
-    strategy: trend
-    params: {}
+    enabled: true
+    strategy: breakout
+    params:
+      entry_n: 20
+      exit_n: 10
+      atr_mult: 3
   QQQ:
-    enabled: false
-    strategy: trend
-    params: {}
+    enabled: true
+    strategy: momentum
+    params:
+      lookback: 252
+      atr_mult: 3
   BTC/USD:
-    enabled: false
-    strategy: trend
-    params: {}
+    enabled: true
+    strategy: momentum
+    params:
+      lookback: 120
+      atr_mult: 3
 risk:
   capital_usd: 10000
   risk_per_trade_pct: 1.0
