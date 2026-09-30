@@ -556,8 +556,9 @@ Only then do all of these, together:
 - Run `docker compose up -d --force-recreate`.
 
 The live gate expires after 7 days. Once `var/live_gate.json` is older than that, the guard
-blocks every order, exits included. Re-run `final-check` at least weekly while you trade live,
-and the drill at least monthly.
+blocks new entries. Stops, exits and the kill switch still work, so open positions stay
+protected. Re-run `final-check` at least weekly while you trade live, and the drill at least
+monthly.
 
 ## Troubleshooting
 

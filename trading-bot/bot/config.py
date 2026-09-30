@@ -186,7 +186,17 @@ def write_config_block(data: dict[str, Any], path: Path | str = STRATEGY_PATH) -
     if yaml.safe_load(yaml_text) != data:  # the splice must reproduce `data` exactly
         yaml_text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
     new_block = f"{CONFIG_BEGIN}\n\n```yaml\n{yaml_text}```\n\n"
-    path.write_text(text[:start] + new_block + text[end:])
+    _atomic_write(path, text[:start] + new_block + text[end:])
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Write via a sibling temp file and os.replace, keeping the file's permissions, so a crash or a
+    full disk can never leave the bot's rulebook half-written."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    if path.exists():
+        os.chmod(tmp, path.stat().st_mode & 0o7777)
+    os.replace(tmp, path)
 
 
 def _merge_yaml_sections(block: str, data: dict[str, Any]) -> str:
@@ -222,14 +232,18 @@ def _merge_yaml_sections(block: str, data: dict[str, Any]) -> str:
 
 
 def replace_section(name: str, markdown: str, path: Path | str = STRATEGY_PATH) -> None:
-    """Replace the text between `<!-- BEGIN name -->` and `<!-- END name -->`."""
+    """Replace the text between `<!-- BEGIN name -->` and `<!-- END name -->`.
+
+    A body containing section markers is refused: it could forge or break the CONFIG block."""
+    if re.search(r"<!--\s*(BEGIN|END)\b", markdown):
+        raise ConfigError(f"section {name!r} body must not contain BEGIN/END markers")
     path = Path(path)
     text = path.read_text()
     begin, end = f"<!-- BEGIN {name} -->", f"<!-- END {name} -->"
     i, j = text.find(begin), text.find(end)
     if i < 0 or j < 0 or j < i:
         raise ConfigError(f"strategy.md has no {begin} ... {end} section")
-    path.write_text(text[: i + len(begin)] + "\n\n" + markdown.strip() + "\n\n" + text[j:])
+    _atomic_write(path, text[: i + len(begin)] + "\n\n" + markdown.strip() + "\n\n" + text[j:])
 
 
 # --------------------------------------------------------------------------- environment

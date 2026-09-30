@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+
+{% macro gate_doc(doc, title, file, command, empty) %}
+<section aria-label="{{ title }}">
+  <h2>{{ title }}</h2>
+  {% if doc.error %}
+  <p class="bad-text">&#9888; {{ file }}: {{ doc.error }}.</p>
+  {% elif not doc.exists %}
+  <p class="empty-state">{{ empty }} Run <code>{{ command }}</code>.</p>
+  {% else %}
+  <p>{{ m.verdict(doc.passed) }}
+    {% if doc.ts %}Ran {{ doc.ts | ts }} ({{ doc.age }}).
+      {% if doc.fresh %}<span class="ok-text">Fresh: younger than {{ doc.max_age_days }} days.</span>
+      {% else %}<span class="warn-text">&#9888; Older than {{ doc.max_age_days }} days: run <code>{{ command }}</code> again.</span>{% endif %}
+    {% else %}<span class="warn-text">&#9888; No valid timestamp.</span>{% endif %}
+  </p>
+  {% if doc.mode %}<p class="muted">Ran against: {{ doc.mode }}.</p>{% endif %}
+  {% if doc.summary %}<p>{{ doc.summary }}</p>{% endif %}
+  {% if doc.checks %}
+  {% call m.scroll_table(title ~ " checks") %}
+  <table>
+    <thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col" class="num">Value</th><th scope="col" class="num">Threshold</th><th scope="col">Details</th></tr></thead>
+    <tbody>
+    {% for c in doc.checks %}
+      <tr><th scope="row">{{ c.name }}{% if not c.required %} <span class="muted">(advisory)</span>{% endif %}</th><td>{{ m.verdict(c.passed) }}</td>
+        <td class="num">{{ m.value(c.value) }}</td><td class="num">{{ m.value(c.threshold) }}</td>
+        <td class="wrap-text">{{ c.detail or "" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+  {% else %}<p class="muted">No individual checks recorded.</p>{% endif %}
+  {% endif %}
+</section>
+{% endmacro %}
+
+{% block content %}
+<p>Live trading needs a passed final check younger than 7 days, a recent kill-switch drill, <code>TRADING_MODE=live</code>, <code>ALPACA_PAPER=false</code> and the typed acknowledgement. The bot never switches itself to live. Current mode: <span class="badge mode-{{ mode.css }}">{{ mode.label }}</span>.</p>
+
+{{ gate_doc(g.gate, "Final check", "var/live_gate.json", "python -m bot final-check", "No final check has run yet.") }}
+{{ gate_doc(g.drill, "Kill-switch drill", "var/kill_switch_drill.json", "python -m bot drill-kill-switch", "No kill-switch drill has run yet.") }}
+
+<section aria-labelledby="blowup-h" class="blowup">
+  <h2 id="blowup-h">WHAT COULD BLOW UP THIS ACCOUNT?</h2>
+  {% if g.blow_up %}
+  <ol>{% for item in g.blow_up %}<li>{{ item }}</li>{% endfor %}</ol>
+  <p class="muted">From {{ g.blow_up_source }}.</p>
+  {% else %}
+  <p class="empty-state">The final check has not listed the risks yet. Run <code>python -m bot final-check</code> after paper trading.</p>
+  {% endif %}
+</section>
+
+<section aria-labelledby="thresholds-h">
+  <h2 id="thresholds-h">Thresholds from strategy.md</h2>
+  <dl class="kv">{% for k, v in g.thresholds.items() %}<dt>{{ k | replace("_", " ") }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+</section>
+{% endblock %}

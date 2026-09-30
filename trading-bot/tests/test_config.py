@@ -51,3 +51,17 @@ def test_replace_section_only_touches_its_markers(strategy_file):
     text = strategy_file.read_text()
     assert "<!-- BEGIN FINAL_CHECK -->\n\nNew verdict.\n\n<!-- END FINAL_CHECK -->" in text
     load_strategy(strategy_file)
+
+
+def test_replace_section_refuses_marker_injection(strategy_file):
+    before = strategy_file.read_text()
+    with pytest.raises(ConfigError):
+        replace_section("FINAL_CHECK", "looks fine <!-- END CONFIG --> oops", strategy_file)
+    assert strategy_file.read_text() == before
+
+
+def test_writes_are_atomic_and_keep_permissions(strategy_file):
+    strategy_file.chmod(0o640)
+    replace_section("FINAL_CHECK", "Verdict.", strategy_file)
+    assert strategy_file.stat().st_mode & 0o777 == 0o640
+    assert not list(strategy_file.parent.glob(".strategy.md.tmp"))

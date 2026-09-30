@@ -1,0 +1,61 @@
+{# Shared markup. Every value is autoescaped; charts arrive as Markup built by charts.py. #}
+
+{% macro verdict(passed) -%}
+{% if passed is sameas true %}<span class="tag ok">&#10003; pass</span>
+{%- elif passed is sameas false %}<span class="tag bad">&#10007; fail</span>
+{%- else %}<span class="tag">n/a</span>{% endif %}
+{%- endmacro %}
+
+{% macro gate_tag(gate) -%}
+{% set css = {"passed": "ok", "vetoed": "bad", "error": "bad", "shadow": "warn"} %}
+<span class="tag {{ css.get(gate, '') }}">{{ gate or "not evaluated" }}</span>
+{%- endmacro %}
+
+{% macro value(v) -%}
+{% if v is none %}<span class="muted">n/a</span>
+{%- elif v is sameas true %}yes
+{%- elif v is sameas false %}no
+{%- elif v is mapping %}
+<dl class="kv nested">
+{% for k, item in v.items() %}<dt>{{ k }}</dt><dd>{{ value(item) }}</dd>
+{% endfor %}
+</dl>
+{%- elif v is string %}{{ v }}
+{%- elif v is sequence %}
+{% if v %}<ul class="plain">{% for item in v %}<li>{{ value(item) }}</li>{% endfor %}</ul>{% else %}<span class="muted">none</span>{% endif %}
+{%- else %}{{ v }}{% endif %}
+{%- endmacro %}
+
+{% macro scroll_table(label) -%}
+<div class="table-wrap" role="region" aria-label="{{ label }}" tabindex="0">{{ caller() }}</div>
+{%- endmacro %}
+
+{% macro regime_tables(r, subject) -%}
+{% call scroll_table("Regime results for " ~ subject) %}
+<table>
+  <caption>By market regime: {{ subject }}</caption>
+  <thead><tr><th scope="col">Regime</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th><th scope="col" class="num">Bars</th></tr></thead>
+  <tbody>
+  {% for group, label in (("trend", "Trend"), ("vol", "Volatility")) %}
+    {% for row in r[group] %}
+    <tr><th scope="row">{{ label }}: {{ row.name }}</th><td class="num">{{ row.ret }}</td><td class="num">{{ row.dd }}</td><td class="num">{{ row.trades }}</td><td class="num">{{ row.bars }}</td></tr>
+    {% endfor %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endcall %}
+{% call scroll_table("Stress windows for " ~ subject) %}
+<table>
+  <caption>Stress windows: {{ subject }}</caption>
+  <thead><tr><th scope="col">Window</th><th scope="col">Dates</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th></tr></thead>
+  <tbody>
+  {% for row in r.stress %}
+    <tr{% if row.no_data %} class="dim"{% endif %}><th scope="row">{{ row.name }}</th><td>{{ row.window or "n/a" }}</td>
+      {% if row.no_data %}<td colspan="3">No data in this window</td>{% else %}<td class="num">{{ row.ret }}</td><td class="num">{{ row.dd }}</td><td class="num">{{ row.trades }}</td>{% endif %}</tr>
+  {% else %}
+    <tr><td colspan="5">No stress windows recorded.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endcall %}
+{%- endmacro %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+{% if error %}
+<p class="empty-state bad-text">The tournament results could not be read: {{ error }}. Re-run <code>python -m bot tournament</code>.</p>
+{% elif bt %}
+{% include "_backtest.html" %}
+{% else %}
+<div class="empty-state">
+  <p><strong>No tournament results yet.</strong></p>
+  <p>Run <code>python -m bot tournament</code> to backtest every strategy, parameter set and symbol. It writes <code>results/tournament.json</code>, which this page reads.</p>
+</div>
+{% endif %}
+{% endblock %}
