@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
-from alpaca.data.enums import Adjustment
-from alpaca.data.models import BarSet
-from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
-from alpaca.data.timeframe import TimeFrameUnit
 
 from bot import data
-from bot.data import alpaca_daily, cache_path, fetch_daily, load_daily
+from bot.data import cache_path, fetch_daily, load_daily
 
 COLUMNS = ["open", "high", "low", "close", "volume"]
 
@@ -165,111 +161,3 @@ def test_fetch_daily_failure_keeps_the_old_cache(cache_dir, fake_yf):
 
 
 # --------------------------------------------------------------------------- Alpaca
-
-
-class FakeStockClient:
-    def __init__(self, response) -> None:
-        self.response = response
-        self.requests: list[StockBarsRequest] = []
-
-    def get_stock_bars(self, request: StockBarsRequest):
-        self.requests.append(request)
-        return self.response
-
-
-class FakeCryptoClient:
-    def __init__(self, response) -> None:
-        self.response = response
-        self.requests: list[CryptoBarsRequest] = []
-
-    def get_crypto_bars(self, request: CryptoBarsRequest):
-        self.requests.append(request)
-        return self.response
-
-
-def raw_bars(symbol: str, stamps: list[str]) -> dict:
-    return {
-        symbol: [
-            {
-                "t": t,
-                "o": 10.0 + i,
-                "h": 11.0 + i,
-                "l": 9.0 + i,
-                "c": 10.5 + i,
-                "v": 1000 + i,
-                "n": 5,
-                "vw": 10.2,
-            }
-            for i, t in enumerate(stamps)
-        ]
-    }
-
-
-STOCK_STAMPS = ["2024-01-02T05:00:00Z", "2024-01-03T05:00:00Z", "2024-01-04T05:00:00Z"]
-
-
-def test_alpaca_daily_stocks():
-    client = FakeStockClient(BarSet(raw_data=raw_bars("SPY", STOCK_STAMPS)))
-    now = datetime(2024, 1, 4, 18, 0, tzinfo=timezone.utc)  # 13:00 New York: Jan 4 still open
-
-    bars = alpaca_daily(client, "SPY", "2024-01-01", "2024-01-04", now=now)
-
-    assert_canonical(bars)
-    assert list(bars.index.strftime("%Y-%m-%d")) == ["2024-01-02", "2024-01-03"]
-    assert bars.iloc[0].tolist() == [10.0, 11.0, 9.0, 10.5, 1000.0]
-    (request,) = client.requests
-    assert request.symbol_or_symbols == "SPY"
-    assert request.adjustment == Adjustment.ALL
-    assert request.timeframe.unit == TimeFrameUnit.Day and request.timeframe.amount == 1
-
-
-def test_alpaca_daily_crypto_uses_utc_dates_and_drops_the_open_bar():
-    stamps = ["2024-01-01T00:00:00Z", "2024-01-02T00:00:00Z", "2024-01-03T00:00:00Z"]
-    client = FakeCryptoClient(BarSet(raw_data=raw_bars("BTC/USD", stamps)))
-    now = datetime(2024, 1, 3, 12, 0, tzinfo=timezone.utc)
-
-    bars = alpaca_daily(client, "BTC/USD", "2024-01-01", None, now=now)
-
-    assert list(bars.index.strftime("%Y-%m-%d")) == ["2024-01-01", "2024-01-02"]
-    assert isinstance(client.requests[0], CryptoBarsRequest)
-    assert client.requests[0].end is None
-
-
-def test_alpaca_daily_crypto_bar_is_open_until_24h_after_its_timestamp():
-    stamps = ["2024-01-02T05:00:00Z", "2024-01-03T05:00:00Z"]  # aligned to midnight New York
-    client = FakeCryptoClient(BarSet(raw_data=raw_bars("BTC/USD", stamps)))
-    now = datetime(2024, 1, 4, 1, 0, tzinfo=timezone.utc)  # past 00:00 UTC, before 05:00 UTC
-
-    bars = alpaca_daily(client, "BTC/USD", "2024-01-01", now=now)
-
-    assert list(bars.index.strftime("%Y-%m-%d")) == ["2024-01-02"]
-
-
-def test_alpaca_daily_filters_to_the_requested_dates():
-    client = FakeStockClient(BarSet(raw_data=raw_bars("SPY", STOCK_STAMPS)))
-    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    bars = alpaca_daily(client, "SPY", "2024-01-03", "2024-01-03", now=now)
-    assert list(bars.index.strftime("%Y-%m-%d")) == ["2024-01-03"]
-
-
-def test_alpaca_daily_accepts_raw_dict_responses_and_empty_results():
-    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    raw = FakeStockClient(raw_bars("SPY", STOCK_STAMPS))
-    assert len(alpaca_daily(raw, "SPY", "2024-01-01", "2024-01-31", now=now)) == 3
-    empty = alpaca_daily(FakeStockClient(BarSet(raw_data={})), "SPY", "2024-01-01", now=now)
-    assert_canonical(empty)
-    assert empty.empty
-
-
-def test_alpaca_daily_finds_clients_on_a_broker_or_in_containers():
-    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    stock = FakeStockClient(BarSet(raw_data=raw_bars("SPY", STOCK_STAMPS)))
-    crypto = FakeCryptoClient(BarSet(raw_data=raw_bars("BTC/USD", ["2024-01-01T00:00:00Z"])))
-    broker = SimpleNamespace(trading=object(), stock_data=stock, crypto_data=crypto)
-
-    assert len(alpaca_daily(broker, "SPY", "2024-01-01", now=now)) == 3
-    assert len(alpaca_daily(broker, "BTC/USD", "2024-01-01", now=now)) == 1
-    assert len(alpaca_daily((stock, crypto), "BTC/USD", "2024-01-01", now=now)) == 1
-    assert len(alpaca_daily({"stock": stock}, "SPY", "2024-01-01", now=now)) == 3
-    with pytest.raises(TypeError, match="get_crypto_bars"):
-        alpaca_daily({"stock": stock}, "BTC/USD", "2024-01-01", now=now)

@@ -5,7 +5,7 @@ import pytest
 
 from bot.config import LIVE_ACK_PHRASE, ConfigError, RiskConfig
 from bot.models import OrderIntent, OrderPurpose, RiskAction, Side, Signal, SignalKind
-from bot.risk import DAILY_LOSS_KEY, ERRORS_KEY, PEAK_KEY, KillSwitch, RiskContext, RiskManager
+from bot.risk import DAILY_LOSS_KEY, ERRORS_KEY, PEAK_KEY, RESET_TS_KEY, KillSwitch, RiskContext, RiskManager
 
 UTC = timezone.utc
 NOW = datetime(2026, 9, 30, 15, 0, tzinfo=UTC)  # 11:00 in New York
@@ -120,6 +120,7 @@ def test_reset_needs_confirm(kill, store):
     assert not kill.is_tripped()
     assert kill.status() is None
     assert store.events[-1][1] == "kill_switch_reset"
+    assert datetime.fromisoformat(store.kv[RESET_TS_KEY]).tzinfo is not None
 
 
 def test_env_forces_kill_switch_and_blocks_reset(tmp_settings):
@@ -210,11 +211,19 @@ def test_risk_reducing_orders_always_allowed(rm, kill, purpose):
     assert verdict.adjusted_qty is None
 
 
-def test_risk_reducing_blocked_only_by_live_guard(tmp_settings, store):
+def test_risk_reducing_allowed_without_fresh_live_gate(tmp_settings, store):
     live_without_gate = tmp_settings.model_copy(
         update={"trading_mode": "live", "alpaca_paper": False, "live_trading_ack": LIVE_ACK_PHRASE}
     )
     rm = RiskManager(risk_config(), store, KillSwitch(live_without_gate, store))
+    assert rm.check(entry(side=Side.SELL, purpose=OrderPurpose.STOP), ctx()).action is RiskAction.ALLOW
+    verdict = rm.check(entry(), ctx())
+    assert verdict.action is RiskAction.BLOCK and "live-trading guard" in verdict.reason
+
+
+def test_risk_reducing_blocked_by_mixed_paper_live_config(tmp_settings, store):
+    mixed = tmp_settings.model_copy(update={"alpaca_paper": False})  # paper mode, live endpoint
+    rm = RiskManager(risk_config(), store, KillSwitch(mixed, store))
     verdict = rm.check(entry(side=Side.SELL, purpose=OrderPurpose.STOP), ctx())
     assert verdict.action is RiskAction.BLOCK
     assert "live-trading guard" in verdict.reason

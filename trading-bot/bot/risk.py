@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 PEAK_KEY = "peak_bot_equity"
 ERRORS_KEY = "consecutive_errors"
 DAILY_LOSS_KEY = "daily_loss_block_day"  # New York date on which the daily loss limit was hit
+RESET_TS_KEY = "kill_switch_reset_ts"  # the runner counts orders_today from here after a resume
 MIN_ORDER_USD = 1.0  # Alpaca's minimum notional for fractional orders
 
 
@@ -104,6 +105,8 @@ class KillSwitch:
         previous = self.status()
         self.path.unlink(missing_ok=True)
         self._unpersisted = None
+        if self._store is not None:
+            self._store.kv_set(RESET_TS_KEY, utcnow().isoformat())
         log.warning("kill switch reset (was: %s)", previous)
         self._event("warning", "kill_switch_reset", "kill switch reset from the CLI", {"previous": previous})
 
@@ -166,7 +169,7 @@ class RiskManager:
 
     def check(self, intent: OrderIntent, ctx: RiskContext) -> RiskVerdict:
         if not intent.purpose.increases_risk:
-            guard = self._live_guard_problem()
+            guard = self._live_guard_problem(risk_increasing=False)
             if guard is not None:
                 return _block(guard)
             return RiskVerdict(RiskAction.ALLOW, f"{intent.purpose.value} reduces risk")
@@ -213,10 +216,10 @@ class RiskManager:
         # 6.
         return RiskVerdict(RiskAction.ALLOW, f"within limits (${notional:,.2f}){note}", adjusted)
 
-    def _live_guard_problem(self) -> str | None:
+    def _live_guard_problem(self, *, risk_increasing: bool = True) -> str | None:
         settings = self._kill.settings
         try:
-            assert_trading_allowed(settings, settings.live_gate_path)
+            assert_trading_allowed(settings, settings.live_gate_path, risk_increasing=risk_increasing)
         except ConfigError as exc:
             return f"live-trading guard: {exc}"
         return None

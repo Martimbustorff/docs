@@ -54,6 +54,8 @@ if TYPE_CHECKING:
     from bot.store import Store
 
 log = logging.getLogger(__name__)
+SIP_DELAY = timedelta(minutes=16)  # free Alpaca plans may read SIP data older than 15 minutes
+MIN_HOURS_PER_DAY = 20
 
 BAR_COLUMNS = ("open", "high", "low", "close", "volume")
 MAX_CLIENT_ORDER_ID = 48
@@ -175,14 +177,60 @@ def _bars_frame(symbol: str, bars: list[Any], start: date, end: date | None, now
     return frame.dropna()
 
 
+def _stock_bars_request(symbol: str, start: datetime, end: datetime | None, feed: DataFeed) -> StockBarsRequest:
+    return StockBarsRequest(
+        symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, end=end, feed=feed, adjustment=Adjustment.ALL
+    )
+
+
+def _utc_days_from_hours(hours: list[Any], start: date, end: date | None, now: datetime) -> pd.DataFrame:
+    """Hourly crypto bars -> daily bars on UTC days, keeping only days that have fully closed."""
+    grouped: dict[date, list[Any]] = {}
+    for bar in hours:
+        ts = bar.timestamp if bar.timestamp.tzinfo else bar.timestamp.replace(tzinfo=UTC)
+        grouped.setdefault(ts.astimezone(UTC).date(), []).append(bar)
+    rows: dict[date, tuple[float, ...]] = {}
+    for day, bars in grouped.items():
+        if datetime.combine(day + timedelta(days=1), time(0), tzinfo=UTC) > now:
+            continue
+        if day < start or (end is not None and day > end):
+            continue
+        if len(bars) < MIN_HOURS_PER_DAY:
+            log.warning("only %d hourly bars on %s; its daily bar may differ from the backtest data", len(bars), day)
+        bars.sort(key=lambda b: b.timestamp)
+        rows[day] = (
+            float(bars[0].open),
+            max(float(b.high) for b in bars),
+            min(float(b.low) for b in bars),
+            float(bars[-1].close),
+            sum(float(b.volume) for b in bars),
+        )
+    if not rows:
+        return _empty_bars()
+    days = sorted(rows)
+    return pd.DataFrame(
+        [rows[d] for d in days],
+        columns=list(BAR_COLUMNS),
+        index=pd.DatetimeIndex(pd.to_datetime(days), name="date"),
+        dtype=float,
+    ).dropna()
+
+
 # --------------------------------------------------------------------------- live-trading guard
 
 
-def assert_trading_allowed(settings: Settings, live_gate_path: Path, *, now: datetime | None = None) -> None:
+def assert_trading_allowed(
+    settings: Settings, live_gate_path: Path, *, now: datetime | None = None, risk_increasing: bool = True
+) -> None:
     """Raise ConfigError unless the mode, endpoint, acknowledgement and live gate agree.
 
     Allowed: paper mode against the paper endpoint, or live mode against the live endpoint with
     the exact acknowledgement phrase and a passed `live_gate.json` younger than 7 days.
+
+    A risk-reducing order (`risk_increasing=False`) skips only the live gate's freshness check:
+    an expired final check must stop new entries, never the stops protecting open positions.
+    A mismatched mode/endpoint still blocks everything, because the bot can't tell which
+    account it would be selling from.
     """
     if settings.trading_mode == "paper":
         if not settings.alpaca_paper:
@@ -194,7 +242,8 @@ def assert_trading_allowed(settings: Settings, live_gate_path: Path, *, now: dat
         raise ConfigError("TRADING_MODE=live needs ALPACA_PAPER=false; mixed paper/live config refused")
     if settings.live_trading_ack != LIVE_ACK_PHRASE:
         raise ConfigError("TRADING_MODE=live needs LIVE_TRADING_ACK set to the exact phrase in bot.config.LIVE_ACK_PHRASE")
-    _check_live_gate(Path(live_gate_path), now or utcnow())
+    if risk_increasing:
+        _check_live_gate(Path(live_gate_path), now or utcnow())
 
 
 def _check_live_gate(path: Path, now: datetime) -> None:
@@ -255,7 +304,7 @@ class Broker(Protocol):
 
 class AlpacaBroker:
     """alpaca-py TradingClient (paper endpoint iff settings.alpaca_paper) plus the historical data
-    clients. Stocks use the free IEX feed. Only OrderGateway may call `submit`."""
+    clients. Only OrderGateway may call `submit`."""
 
     def __init__(self, settings: Settings, clock: Callable[[], datetime] = utcnow) -> None:
         api_key, secret_key = settings.alpaca_api_key, settings.alpaca_secret_key
@@ -312,23 +361,28 @@ class AlpacaBroker:
         return price
 
     def daily_bars(self, symbol: str, start: date, end: date | None = None) -> pd.DataFrame:
-        """Completed daily bars in [start, end]; the bar still forming is never returned."""
+        """Completed daily bars in [start, end]; the bar still forming is never returned.
+
+        Built to match the backtest's data: stock bars come from the consolidated SIP feed
+        (free plans may read it once it is 15 minutes old), and crypto days are aggregated
+        from hourly bars so each one spans 00:00-24:00 UTC like the cached daily history.
+        """
+        now = self._clock()
         start_dt = datetime.combine(start, time(0), tzinfo=UTC)
         end_dt = datetime.combine(end + timedelta(days=1), time(0), tzinfo=UTC) if end else None
         if asset_class(symbol) is AssetClass.CRYPTO:
-            request = CryptoBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start_dt, end=end_dt)
-            barset = self.crypto_data.get_crypto_bars(request)
-        else:
-            request = StockBarsRequest(
-                symbol_or_symbols=symbol,
-                timeframe=TimeFrame.Day,
-                start=start_dt,
-                end=end_dt,
-                feed=DataFeed.IEX,
-                adjustment=Adjustment.ALL,
+            request = CryptoBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Hour, start=start_dt, end=end_dt)
+            hours = self.crypto_data.get_crypto_bars(request).data.get(symbol, [])
+            return _utc_days_from_hours(hours, start, end, now)
+        sip_end = now - SIP_DELAY
+        try:
+            barset = self.stock_data.get_stock_bars(
+                _stock_bars_request(symbol, start_dt, min(end_dt, sip_end) if end_dt else sip_end, DataFeed.SIP)
             )
-            barset = self.stock_data.get_stock_bars(request)
-        return _bars_frame(symbol, barset.data.get(symbol, []), start, end, self._clock())
+        except APIError as exc:
+            log.warning("SIP bars for %s unavailable (%s); falling back to IEX, which can differ from the backtest data", symbol, exc)
+            barset = self.stock_data.get_stock_bars(_stock_bars_request(symbol, start_dt, end_dt, DataFeed.IEX))
+        return _bars_frame(symbol, barset.data.get(symbol, []), start, end, now)
 
     def is_market_open(self) -> bool:
         """US equity session; crypto trades around the clock."""
@@ -672,11 +726,11 @@ class OrderGateway:
     def _guard_problem(self, intent: OrderIntent) -> str | None:
         if intent.purpose.increases_risk and self.kill.is_tripped():
             return "kill switch is tripped"
-        return self._live_guard_problem()
+        return self._live_guard_problem(risk_increasing=intent.purpose.increases_risk)
 
-    def _live_guard_problem(self) -> str | None:
+    def _live_guard_problem(self, *, risk_increasing: bool = False) -> str | None:
         try:
-            assert_trading_allowed(self.settings, self.settings.live_gate_path)
+            assert_trading_allowed(self.settings, self.settings.live_gate_path, risk_increasing=risk_increasing)
         except ConfigError as exc:
             return f"live-trading guard: {exc}"
         if not self.broker.is_paper and self.settings.trading_mode != "live":

@@ -34,7 +34,7 @@ from typesafe_sdk import (
 )
 
 from bot.config import ConfigError, JevConfig, JevQuestion, Settings
-from bot.config import JevGate as GateRule
+from bot.config import JevGateRule as GateRule
 from bot.models import JevAnswer, JevDecision, Signal, SignalKind
 from bot.news import Headline
 from bot.timeutil import UTC, bar_close_ts

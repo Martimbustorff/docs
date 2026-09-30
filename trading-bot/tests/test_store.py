@@ -453,3 +453,21 @@ def test_second_connection_sees_committed_writes(tmp_path):
             assert raw.execute("SELECT value FROM kv WHERE key = 'k'").fetchone() == ("v",)
         finally:
             raw.close()
+
+
+def test_orders_today_counts_from_a_later_resume(tmp_path):
+    from bot.models import OrderIntent, OrderPurpose, OrderResult, Side
+
+    store = Store(tmp_path / "s.sqlite3")
+    day = datetime(2026, 9, 29, 14, 0, tzinfo=timezone.utc)
+    for i, hour in enumerate((14, 15, 16)):
+        cid = f"entry-SPY-{i}"
+        store.upsert_order(
+            OrderIntent("SPY", Side.BUY, 1.0, 100.0, OrderPurpose.ENTRY, "t", cid),
+            OrderResult(cid, f"b{i}", "filled", 1.0, 100.0),
+            ts=day.replace(hour=hour),
+        )
+    now = day.replace(hour=18)
+    assert store.orders_today(now) == 3
+    assert store.orders_today(now, since=day.replace(hour=15, minute=30)) == 1
+    assert store.orders_today(now, since=day.replace(hour=2)) == 3  # a reset before today changes nothing

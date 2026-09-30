@@ -432,6 +432,18 @@ def test_live_broker_needs_live_mode(tmp_settings):
     assert result.status == "refused" and "broker is live" in result.message
 
 
+def test_expired_live_gate_blocks_entries_but_not_exits_or_flatten(tmp_settings):
+    fresh = live_settings(tmp_settings)
+    rig = Rig(fresh, sim=SimBroker(is_paper=False))
+    assert rig.gateway.submit(intent(qty=5)).status == "filled"
+    rig.gateway.settings = live_settings(fresh, gate_age=timedelta(days=8))
+    assert rig.gateway.submit(intent(key="k2")).status == "refused"
+    stop = rig.gateway.submit(intent(side=Side.SELL, qty=2, purpose=OrderPurpose.STOP))
+    assert stop.status == "filled"
+    results = rig.gateway.flatten_all("kill")
+    assert [r.status for r in results] == ["filled"] and rig.sim.positions() == {}
+
+
 def test_live_mode_with_passed_gate_trades(tmp_settings):
     rig = Rig(live_settings(tmp_settings), sim=SimBroker(is_paper=False))
     assert rig.gateway.submit(intent()).status == "filled"
@@ -724,34 +736,56 @@ def test_alpaca_stock_bars_request_and_frame(alpaca):
     frame = alpaca.daily_bars("SPY", date(2026, 9, 28))
     request = alpaca.stock_data.requests[-1]
     assert isinstance(request, StockBarsRequest)
-    assert request.timeframe.value == "1Day" and request.feed is DataFeed.IEX and request.adjustment is Adjustment.ALL
-    assert request.end is None
+    assert request.timeframe.value == "1Day" and request.feed is DataFeed.SIP and request.adjustment is Adjustment.ALL
+    assert request.end == (NOW - timedelta(minutes=16)).replace(tzinfo=None)  # free plans: SIP older than 15 min
     assert list(frame.columns) == ["open", "high", "low", "close", "volume"]
     assert frame.index.name == "date" and frame.index.tz is None
     assert list(frame.index.strftime("%Y-%m-%d")) == ["2026-09-28", "2026-09-29"]
     assert frame["close"].tolist() == [501.0, 502.0] and all(t == "float64" for t in frame.dtypes)
 
 
-def test_alpaca_crypto_bars_only_completed_days(alpaca):
+def hourly(day, closes):
+    start = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    return [bar(start + timedelta(hours=h), c) for h, c in enumerate(closes)]
+
+
+def test_alpaca_crypto_days_are_built_from_hourly_bars_on_utc_days(alpaca):
     alpaca._clock = lambda: datetime(2026, 9, 30, 3, 0, tzinfo=UTC)
     alpaca.crypto_data.bars = {
-        "BTC/USD": [
-            bar(datetime(2026, 9, 28, 0, 0, tzinfo=UTC), 60_000.0),
-            bar(datetime(2026, 9, 29, 0, 0, tzinfo=UTC), 61_000.0),
-            bar(datetime(2026, 9, 30, 0, 0, tzinfo=UTC), 62_000.0),
-        ]
+        "BTC/USD": hourly(date(2026, 9, 28), [60_000.0 + h for h in range(24)])
+        + hourly(date(2026, 9, 29), [61_000.0 - h for h in range(24)])
+        + hourly(date(2026, 9, 30), [62_000.0, 62_100.0, 62_200.0])  # still forming at 03:00 UTC
     }
     frame = alpaca.daily_bars("BTC/USD", date(2026, 9, 1), date(2026, 9, 30))
     request = alpaca.crypto_data.requests[-1]
     assert isinstance(request, CryptoBarsRequest) and request.symbol_or_symbols == "BTC/USD"
+    assert request.timeframe.value == "1Hour"
     assert request.end == datetime(2026, 10, 1)  # alpaca-py stores naive UTC
     assert list(frame.index.strftime("%Y-%m-%d")) == ["2026-09-28", "2026-09-29"]
+    sep28 = frame.loc["2026-09-28"]
+    assert sep28["open"] == 59_999.0 and sep28["close"] == 60_023.0  # first hour's open, last hour's close
+    assert sep28["high"] == 60_024.0 and sep28["low"] == 59_998.0 and sep28["volume"] == 24_000.0
 
 
-def test_alpaca_crypto_bar_with_late_day_boundary_waits_for_its_own_close(alpaca):
-    alpaca._clock = lambda: datetime(2026, 9, 30, 3, 0, tzinfo=UTC)
-    alpaca.crypto_data.bars = {"BTC/USD": [bar(datetime(2026, 9, 29, 5, 0, tzinfo=UTC), 61_000.0)]}
+def test_alpaca_crypto_day_is_open_until_utc_midnight(alpaca):
+    alpaca._clock = lambda: datetime(2026, 9, 29, 23, 59, tzinfo=UTC)
+    alpaca.crypto_data.bars = {"BTC/USD": hourly(date(2026, 9, 29), [61_000.0] * 24)}
     assert alpaca.daily_bars("BTC/USD", date(2026, 9, 1)).empty
+
+
+def test_alpaca_stock_bars_fall_back_to_iex_when_sip_is_refused(alpaca):
+    calls = []
+
+    def bars(request):
+        calls.append(request.feed)
+        if request.feed is DataFeed.SIP:
+            raise api_error(403)
+        return SimpleNamespace(data={"SPY": [bar(datetime(2026, 9, 29, 4, 0, tzinfo=UTC), 502.0)]})
+
+    alpaca.stock_data.get_stock_bars = bars
+    frame = alpaca.daily_bars("SPY", date(2026, 9, 28))
+    assert calls == [DataFeed.SIP, DataFeed.IEX]
+    assert frame["close"].tolist() == [502.0]
 
 
 def test_alpaca_empty_bars_have_the_frame_shape(alpaca):

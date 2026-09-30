@@ -56,13 +56,13 @@ class RiskConfig(_Strict):
     kill_switch_flatten: bool = True  # kill switch closes all bot positions
 
 
-class JevGate(_Strict):
+class JevGateRule(_Strict):
     outcome: str  # "yes"/"no" for noul, a label for choice, a level ("0".."n") for score
     min: float | None = Field(default=None, ge=0, le=1)
     max: float | None = Field(default=None, ge=0, le=1)
 
     @model_validator(mode="after")
-    def _one_bound(self) -> "JevGate":
+    def _one_bound(self) -> "JevGateRule":
         if (self.min is None) == (self.max is None):
             raise ValueError("gate needs exactly one of min or max")
         return self
@@ -74,7 +74,7 @@ class JevQuestion(_Strict):
     criteria: dict[str, str] | list[str] | None = None  # noul: {"true","false"}; choice: label->desc; score: list
     uses_headlines: bool = False  # skipped (auto-pass) when there are no headlines
     applies_to: list[str] | None = None  # strategy names this question gates; None = all
-    gate: JevGate
+    gate: JevGateRule
 
 
 class JevConfig(_Strict):

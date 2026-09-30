@@ -508,9 +508,13 @@ class Store:
     def get_order_by_client_id(self, client_order_id: str) -> dict[str, Any] | None:
         return self._one("SELECT * FROM orders WHERE client_order_id = ?", (client_order_id,))
 
-    def orders_today(self, now: datetime) -> int:
-        """ENTRY orders created on the New York calendar day that contains `now`."""
+    def orders_today(self, now: datetime, since: datetime | None = None) -> int:
+        """ENTRY orders created on the New York calendar day that contains `now`, counted from
+        `since` when that is later (the runner passes the last kill-switch reset, so a same-day
+        resume starts a fresh count instead of re-tripping the order cap)."""
         start, end = ny_day_bounds(ny_trading_day(_aware(now)))
+        if since is not None:
+            start = max(start, _aware(since))
         row = self._one(
             "SELECT COUNT(*) AS n FROM orders WHERE purpose = ? AND ts >= ? AND ts < ?",
             (OrderPurpose.ENTRY.value, to_iso(start), to_iso(end)),
