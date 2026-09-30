@@ -1,0 +1,1353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Tournament report</title>
+<style>
+/* Trading bot dashboard. Self-contained: system fonts, nothing fetched from elsewhere.
+   The same file is inlined into the static tournament report. Colours are tokens on :root,
+   redefined for dark mode; charts use the series tokens through classes (no inline styles,
+   which the CSP forbids). */
+
+:root {
+  color-scheme: light;
+  --bg: #f9f9f7;
+  --surface: #fcfcfb;
+  --fg: #0b0b0b;
+  --fg-2: #52514e;
+  --muted: #6b6a66;
+  --border: #dcdad3;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --link: #1c5cab;
+  --ok: #006300;
+  --ok-bg: #e3f3e3;
+  --bad: #b42323;
+  --bad-bg: #fbe6e6;
+  --warn: #8a5300;
+  --warn-bg: #fdf0d5;
+  --highlight: #eef5fd;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --fg: #ffffff;
+    --fg-2: #c3c2b7;
+    --muted: #a3a29b;
+    --border: #383835;
+    --grid: #2c2c2a;
+    --axis: #4a4a46;
+    --link: #86b6ef;
+    --ok: #4cc84c;
+    --ok-bg: #102a10;
+    --bad: #ff8a80;
+    --bad-bg: #3a1414;
+    --warn: #f5b942;
+    --warn-bg: #33260a;
+    --highlight: #13243a;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --surface: #1a1a19;
+  --fg: #ffffff;
+  --fg-2: #c3c2b7;
+  --muted: #a3a29b;
+  --border: #383835;
+  --grid: #2c2c2a;
+  --axis: #4a4a46;
+  --link: #86b6ef;
+  --ok: #4cc84c;
+  --ok-bg: #102a10;
+  --bad: #ff8a80;
+  --bad-bg: #3a1414;
+  --warn: #f5b942;
+  --warn-bg: #33260a;
+  --highlight: #13243a;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+
+a { color: var(--link); }
+a:focus-visible, button:focus-visible, select:focus-visible, summary:focus-visible, .table-wrap:focus-visible {
+  outline: 3px solid var(--link);
+  outline-offset: 2px;
+}
+
+h1 { font-size: 1.6rem; margin: 1.25rem 0 0.75rem; }
+h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; }
+h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+h4 { font-size: 1rem; margin: 1rem 0 0.5rem; }
+.card h2, .card h3 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--fg-2); }
+p { margin: 0.5rem 0; }
+p, li, dd { overflow-wrap: break-word; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+
+.skip { position: absolute; left: -9999px; top: 0; }
+.skip:focus { left: 16px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 10; }
+
+header.site { background: var(--surface); border-bottom: 1px solid var(--border); }
+.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding-top: 12px; padding-bottom: 4px; }
+.brand { font-weight: 700; margin-right: auto; }
+.nav { display: flex; flex-wrap: wrap; gap: 4px 16px; list-style: none; margin: 0; padding: 4px 0 10px; }
+.nav a { text-decoration: none; padding: 4px 0; display: inline-block; }
+.nav a[aria-current="page"] { font-weight: 700; color: var(--fg); border-bottom: 2px solid var(--link); }
+
+.site-footer { color: var(--muted); font-size: 0.875rem; padding-top: 2rem; padding-bottom: 2rem; }
+
+.badge, .tag {
+  display: inline-block;
+  border-radius: 999px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+}
+.badge { padding: 2px 12px; font-size: 0.875rem; letter-spacing: 0.04em; text-decoration: none; }
+.tag { padding: 0 8px; font-size: 0.8rem; }
+.mode-paper { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.mode-live { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); }
+.badge.bad, .tag.bad { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); }
+.tag.ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.tag.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+
+.ok-text { color: var(--ok); }
+.bad-text { color: var(--bad); }
+.warn-text { color: var(--warn); }
+.muted { color: var(--muted); }
+.pos { color: var(--ok); }
+.neg { color: var(--bad); }
+.dim { color: var(--muted); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; min-width: 0; }
+.stat { font-size: 1.6rem; font-weight: 700; margin: 0.25rem 0; }
+.lead { font-size: 1.05rem; }
+
+dl.kv { display: grid; grid-template-columns: fit-content(50%) minmax(0, 1fr); gap: 2px 12px; margin: 0.5rem 0; }
+dl.kv dt { color: var(--fg-2); }
+dl.kv dd { margin: 0; }
+dl.kv.nested { font-size: 0.9em; margin: 0; }
+dl.rules { grid-template-columns: minmax(0, 1fr); }
+dl.rules dt { font-weight: 700; margin-top: 4px; }
+
+ul.plain { list-style: none; margin: 0; padding: 0; }
+ul.inline { display: flex; flex-wrap: wrap; gap: 8px 16px; list-style: none; padding: 0; }
+.answers li { white-space: nowrap; }
+
+.empty-state { background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; padding: 12px 16px; }
+
+/* Wide tables scroll inside their own container, never the page. */
+.table-wrap { overflow-x: auto; max-width: 100%; margin: 0.5rem 0 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+caption { text-align: left; font-weight: 700; padding: 8px 12px; }
+th, td { padding: 6px 12px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+thead th { background: var(--bg); color: var(--fg-2); font-weight: 600; white-space: nowrap; }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+th[scope="row"] { font-weight: 600; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+td.wrap-text { min-width: 16rem; overflow-wrap: anywhere; }
+tr.survivor { background: var(--highlight); }
+tr.winner { background: var(--ok-bg); }
+tr.survivor > :first-child, tr.winner > :first-child { box-shadow: inset 4px 0 0 var(--ok); }
+tr.lvl-error, tr.lvl-critical { background: var(--bad-bg); }
+
+.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 16px; margin: 1rem 0; }
+.filters label { display: flex; flex-direction: column; font-size: 0.875rem; color: var(--fg-2); }
+select, button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); min-height: 40px; }
+button { cursor: pointer; font-weight: 600; }
+.pager { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 1rem 0; }
+
+details { margin: 0.5rem 0; }
+summary { cursor: pointer; }
+.blowup ol { padding-left: 1.5rem; }
+.blowup li { margin: 0.25rem 0; }
+
+/* Charts: server-rendered SVG, scaled to the container. */
+figure.chart-box { margin: 0.5rem 0 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; max-width: 680px; }
+figcaption { color: var(--muted); font-size: 0.875rem; padding: 4px 4px 0; }
+svg.chart { display: block; width: 100%; height: auto; font-size: 13px; font-family: inherit; }
+svg.chart .grid line { stroke: var(--grid); stroke-width: 1; }
+svg.chart .baseline { stroke: var(--axis); stroke-width: 1; }
+svg.chart .axis text, svg.chart .legend text { fill: var(--fg-2); font-variant-numeric: tabular-nums; }
+svg.chart .axis .label { fill: var(--muted); }
+svg.chart .line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg.chart .bar { fill: var(--series-1); }
+svg.chart .empty { fill: none; stroke: var(--border); }
+svg.chart .s1 { stroke: var(--series-1); }
+svg.chart .s2 { stroke: var(--series-2); stroke-dasharray: 8 4; }
+svg.chart .s3 { stroke: var(--series-3); stroke-dasharray: 2 4; }
+svg.chart .s4 { stroke: var(--series-4); stroke-dasharray: 12 4 2 4; }
+svg.chart .s5 { stroke: var(--series-5); }
+svg.chart .s6 { stroke: var(--series-6); stroke-dasharray: 8 4; }
+svg.chart .dot.s1 { fill: var(--series-1); }
+svg.chart .dot.s2 { fill: var(--series-2); }
+svg.chart .dot.s3 { fill: var(--series-3); }
+svg.chart .dot.s4 { fill: var(--series-4); }
+svg.chart .dot.s5 { fill: var(--series-5); }
+svg.chart .dot.s6 { fill: var(--series-6); }
+svg.chart circle.dot { stroke: var(--surface); stroke-width: 2; stroke-dasharray: none; }
+
+@media (min-width: 900px) {
+  h1 { font-size: 1.9rem; }
+}
+
+@media print {
+  .skip, nav, .filters, .pager { display: none; }
+  .table-wrap { overflow: visible; border: 0; }
+}
+
+</style>
+</head>
+<body>
+<main class="wrap">
+<h1>Tournament report</h1>
+<p class="lead">Generated 2026-09-30T20:58:21Z. <strong>90</strong> configurations tested (strategy &times; parameters &times; symbol). Survivors pass every filter in both windows; they are ranked on the in-sample window only.</p>
+
+<section aria-labelledby="bt-setup-h">
+  <h2 id="bt-setup-h">Setup</h2>
+  <div class="cards">
+    <article class="card">
+      <h3>Windows</h3>
+      <dl class="kv">
+        <dt>In-sample (ranks)</dt><dd>2015-10-14 to 2021-12-31</dd>
+        <dt>Out-of-sample (pass/fail only)</dt><dd>2022-01-01 to 2026-09-29</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <h3>Filters</h3>
+      <dl class="kv"><dt>max drawdown pct</dt><dd>15.0</dd><dt>min profit factor</dt><dd>1.2</dd><dt>min trades</dt><dd>8</dd><dt>min win rate</dt><dd>0.4</dd><dt>require positive in sample</dt><dd>yes</dd><dt>require positive out of sample</dt><dd>yes</dd></dl>
+    </article>
+    <article class="card">
+      <h3>Costs</h3>
+      <dl class="kv"><dt>slippage (bps)</dt><dd>crypto 10.0, stock 5.0</dd><dt>fee (bps)</dt><dd>crypto 25.0, stock 0.0</dd></dl>
+    </article>
+    <article class="card">
+      <h3>Data</h3>
+      <dl class="kv"><dt>SPY</dt><dd>2014-09-17 to 2026-09-29 (3026 bars)</dd><dt>QQQ</dt><dd>2014-09-17 to 2026-09-29 (3026 bars)</dd><dt>BTC/USD</dt><dd>2014-09-17 to 2026-09-29 (4396 bars)</dd></dl>
+    </article>
+  </div>
+</section>
+
+<section aria-labelledby="bt-winners-h">
+  <h2 id="bt-winners-h">Winners</h2>
+  <div class="cards">
+    <article class="card">
+      <h3>SPY</h3>
+      <p><span class="tag ok">&#9733; winner</span> <strong>breakout(atr_mult=2,entry_n=20,exit_n=20)</strong></p>
+<p>Donchian breakout</p>      <p class="muted">Score 1.113 (in-sample Calmar). Params: atr_mult=2, entry_n=20, exit_n=20.</p>
+      <dl class="kv rules"><dt>entry</dt><dd>Buy at the next open when the close is above the highest high of the previous 20 days.</dd><dt>exit</dt><dd>Sell at the next open when the close is below the lowest low of the previous 20 days.</dd><dt>stop loss</dt><dd>Starts at the signal day&#39;s close minus 2 × ATR(14). After every close it moves up to the lowest low of the previous 20 days when that is higher, and it is never lowered.</dd><dt>take profit</dt><dd>None. The trailing channel stop and the exit rule take the profit.</dd><dt>timeframe</dt><dd>Daily bars closing at 16:00 New York time. Signals use the completed bar&#39;s close; orders fill at the next bar&#39;s open.</dd></dl>
+<p class="muted">Approvals: 41 of 41 entry orders (100.0%) were above the approval threshold.</p>    </article>
+    <article class="card">
+      <h3>QQQ</h3>
+      <p><span class="tag ok">&#9733; winner</span> <strong>momentum(atr_mult=3,lookback=252)</strong></p>
+<p>Time-series momentum</p>      <p class="muted">Score 1.075 (in-sample Calmar). Params: atr_mult=3, lookback=252.</p>
+      <dl class="kv rules"><dt>entry</dt><dd>Buy at the next open when the close is higher than it was 252 days ago, the close is above its 50-day average, and 20-day realized volatility is below the 90th percentile of its last 252 days.</dd><dt>exit</dt><dd>Sell at the next open when the close is lower than it was 252 days ago.</dd><dt>stop loss</dt><dd>Trailing stop at the highest close since entry minus 3 × ATR(14), recomputed after every close and never lowered. It starts at the signal day&#39;s close minus 3 × ATR(14).</dd><dt>take profit</dt><dd>None. The trailing stop and the exit rule take the profit.</dd><dt>timeframe</dt><dd>Daily bars closing at 16:00 New York time. Signals use the completed bar&#39;s close; orders fill at the next bar&#39;s open.</dd></dl>
+<p class="muted">Approvals: 75 of 75 entry orders (100.0%) were above the approval threshold.</p>    </article>
+    <article class="card">
+      <h3>BTC/USD</h3>
+      <p><span class="tag ok">&#9733; winner</span> <strong>momentum(atr_mult=3,lookback=120)</strong></p>
+<p>Time-series momentum</p>      <p class="muted">Score 1.733 (in-sample Calmar). Params: atr_mult=3, lookback=120.</p>
+      <dl class="kv rules"><dt>entry</dt><dd>Buy at the next open when the close is higher than it was 120 days ago, the close is above its 50-day average, and 20-day realized volatility is below the 90th percentile of its last 252 days.</dd><dt>exit</dt><dd>Sell at the next open when the close is lower than it was 120 days ago.</dd><dt>stop loss</dt><dd>Trailing stop at the highest close since entry minus 3 × ATR(14), recomputed after every close and never lowered. It starts at the signal day&#39;s close minus 3 × ATR(14).</dd><dt>take profit</dt><dd>None. The trailing stop and the exit rule take the profit.</dd><dt>timeframe</dt><dd>Daily bars closing at 00:00 UTC. Signals use the completed bar&#39;s close; orders fill at the next bar&#39;s open.</dd></dl>
+<p class="muted">Approvals: 83 of 99 entry orders (83.8%) were above the approval threshold.</p>    </article>
+  </div>
+  <figure class="chart-box">
+    <svg class="chart" viewBox="0 0 440 250" role="img" aria-labelledby="winner-equity-title winner-equity-desc" preserveAspectRatio="xMidYMid meet"><title id="winner-equity-title">Winner equity curves</title><desc id="winner-equity-desc">Weekly equity of each symbol&#x27;s winning strategy, each run on its own capital.</desc><g class="grid"><line x1="64.5" x2="426" y1="206" y2="206"/><line x1="64.5" x2="426" y1="166.5" y2="166.5"/><line x1="64.5" x2="426" y1="127" y2="127"/><line x1="64.5" x2="426" y1="87.5" y2="87.5"/><line x1="64.5" x2="426" y1="48" y2="48"/></g><line class="baseline" x1="64.5" x2="426" y1="206" y2="206"/><g class="axis"><text x="58.5" y="210" text-anchor="end">$5,000</text><text x="58.5" y="170.5" text-anchor="end">$10,000</text><text x="58.5" y="131" text-anchor="end">$15,000</text><text x="58.5" y="91.5" text-anchor="end">$20,000</text><text x="58.5" y="52" text-anchor="end">$25,000</text><text x="64.5" y="222" text-anchor="start">2015-10</text><text x="185" y="222" text-anchor="middle">2019-06</text><text x="305.5" y="222" text-anchor="middle">2023-02</text><text x="426" y="222" text-anchor="end">2026-09</text><text class="label" x="64.5" y="40">Equity (USD)</text><text class="label" x="245.2" y="244" text-anchor="middle">Date</text></g><g class="legend"><line class="line s1" x1="12" x2="36" y1="14" y2="14"/><text x="42" y="18">SPY</text><line class="line s2" x1="78.5" x2="102.5" y1="14" y2="14"/><text x="108.5" y="18">QQQ</text><line class="line s3" x1="145" x2="169" y1="14" y2="14"/><text x="175" y="18">BTC/USD</text></g><path class="line s1" d="M64.5,166.5 L65.1,165.9 L65.8,165.9 L66.4,165.6 L67,166.6 L67.7,165.7 L68.3,165.6 L68.9,165.6 L69.6,166.6 L70.2,166.6 L70.7,166.6 L71.4,166.6 L72.1,166.6 L72.7,166.6 L73.4,166.6 L74,166.6 L74.6,166.6 L75.3,166.6 L75.9,166.6 L76.5,166.5 L77.1,165.9 L77.8,165.6 L78.4,165.3 L79,165.5 L79.7,165 L80.3,165.3 L80.9,164.9 L81.6,164.8 L82.2,165.1 L82.8,165.2 L83.5,165.3 L84.1,165.4 L84.7,165.4 L85.4,165.4 L86,165.5 L86.6,165.9 L87.3,165.9 L87.9,165.9 L88.5,165.9 L89.2,165.6 L89.8,165.4 L90.4,165.5 L91.1,165.3 L91.7,165.3 L92.3,165.3 L93,165.4 L93.6,165.3 L94.2,165.6 L94.9,165.6 L95.5,165.6 L96.1,165.6 L96.8,165.6 L97.4,165.6 L98,165.6 L98.7,165.6 L99.3,165.6 L99.9,165.7 L100.6,165.5 L101.2,165.1 L101.8,165.3 L102.4,164.5 L103.1,164.5 L103.7,164.4 L104.3,164.7 L105,164.3 L105.6,164.3 L106.2,164.3 L106.9,164 L107.5,164 L108.1,163.7 L108.8,163.3 L109.4,163.1 L110,162.9 L110.7,163 L111.3,162.9 L111.9,163.3 L112.6,163.3 L113.2,163.3 L113.7,163.3 L114.5,163.3 L115.1,163.4 L115.7,163.2 L116.4,163.3 L117,163.4 L117.6,163 L118.3,162.7 L118.9,162.8 L119.5,162.7 L120.2,162.7 L120.8,162.8 L121.4,163 L122.1,163 L122.7,162.9 L123.3,162.9 L124,162.8 L124.6,163.2 L125.2,163.2 L125.8,163.2 L126.5,163.2 L127.1,163.2 L127.7,163.1 L128.4,163.1 L129,162.9 L129.6,162.6 L130.3,162.5 L130.9,162.3 L131.5,162.2 L132.2,162.1 L132.8,162.2 L133.4,162.2 L134.1,161.9 L134.7,161.5 L135.3,161.3 L136,161.1 L136.6,161 L137.2,161 L137.9,160.3 L138.5,159.8 L139.1,159.5 L139.8,158.9 L140.4,160.1 L141,160.7 L141.7,160.7 L142.3,160.7 L142.9,160.7 L143.6,160.7 L144.2,160.7 L144.8,160.7 L145.4,160.7 L146.1,160.7 L146.7,160.7 L147.4,160.7 L148,160.7 L148.6,160.7 L149.3,160.6 L149.9,160.7 L150.5,160.7 L151.1,160.5 L151.8,160.1 L152.4,160 L153,160.3 L153.7,160.9 L154.3,160.9 L154.9,160.6 L155.6,160.6 L156.2,160.5 L156.8,160.2 L157.5,160.3 L158.1,160.1 L158.7,159.9 L159.4,159.6 L160,159.8 L160.6,159.5 L161.3,159.3 L161.9,159.4 L162.5,159.7 L163.2,159.9 L163.8,159.9 L164.4,159.9 L165.1,159.9 L165.7,159.9 L166.3,159.9 L167,159.9 L167.6,159.9 L168.2,159.9 L168.9,159.9 L169.5,159.9 L170.1,159.9 L170.8,159.9 L171.4,159.9 L172,159.4 L172.7,159.4 L173.3,159 L173.9,159 L174.5,158.4 L175.2,158.2 L175.8,158.1 L176.4,158.7 L177.1,157.9 L177.7,158.1 L178.3,157.8 L179,157.3 L179.6,157.1 L180.2,157.2 L180.9,156.9 L181.5,156.8 L182.1,157.5 L182.8,157.5 L183.4,157.5 L184,157.5 L184.7,157.5 L185.3,157.5 L185.9,157.2 L186.6,157.3 L187.2,156.8 L187.8,156.6 L188.5,156.9 L189.1,156.4 L189.7,157.2 L190.4,157.2 L191,157.2 L191.6,157.2 L192.3,157.2 L192.9,157.2 L193.5,156.9 L194.2,157 L194.8,157.3 L195.4,158 L196.1,158 L196.7,158 L197.3,158 L198,157.7 L198.6,157.4 L199.2,157.2 L199.8,157.3 L200.5,156.9 L201.1,156.9 L201.7,156.7 L202.4,156.2 L203,156 L203.6,156.1 L204.3,155.8 L204.9,155.2 L205.5,155.5 L206.2,156.1 L206.8,155.2 L207.4,154.7 L208.1,155 L208.7,156.2 L209.3,156.2 L210,156.2 L210.6,156.2 L211.2,156.2 L211.9,156.2 L212.4,156.2 L213.1,155.9 L213.8,156 L214.4,156 L215,155.7 L215.7,155.9 L216.3,155.6 L216.9,155.3 L217.6,154.8 L218.2,155.3 L218.8,155.1 L219.5,155.4 L220,155 L220.7,154.8 L221.4,154.6 L222,154.7 L222.6,154.5 L223.2,154.2 L223.9,154.1 L224.5,154 L225.1,153.6 L225.8,153.9 L226.4,154.2 L227,154.2 L227.7,154.2 L228.3,154.2 L228.9,154.1 L229.6,154.1 L230.2,154.2 L230.8,155.3 L231.5,155.3 L232.1,155 L232.7,155.2 L233.4,154.7 L234,154.3 L234.6,154.5 L235.3,154.2 L235.8,154.2 L236.4,153.9 L237.2,153.4 L237.8,153.8 L238.4,153.3 L239.1,154.2 L239.7,153 L240.3,152.7 L241,152.9 L241.6,153.5 L242.2,153.8 L242.9,153.8 L243.5,154.2 L244.1,153.8 L244.7,153.5 L245.4,152.7 L246,152.3 L246.7,152.3 L247.3,152.3 L247.9,151.9 L248.5,152.8 L249.2,152.8 L249.8,152.8 L250.4,152.8 L251.1,152.8 L251.7,153.3 L252.3,153.3 L253,152.8 L253.6,152.7 L254.2,153 L254.9,152.4 L255.5,152.5 L256.1,152.3 L256.8,152 L257.4,152.2 L258,151.8 L258.7,151.6 L259.3,152.1 L259.9,152.2 L260.6,152.7 L261.2,152.7 L261.8,152.7 L262.5,152.7 L263.1,152.1 L263.7,151.8 L264.4,151.2 L265,151.3 L265.6,151.2 L266.3,151.8 L266.9,152 L267.5,152 L268.2,152 L268.7,152 L269.4,152.2 L270.1,152.7 L270.7,152.9 L271.3,152.9 L271.9,152.9 L272.6,152.9 L273.2,152.9 L273.8,152.9 L274.5,152.9 L275.1,152.9 L275.7,152.9 L276.4,152.9 L277,152.6 L277.6,152.6 L278.3,152.9 L278.8,153.4 L279.5,153.5 L280.2,153.5 L280.8,153.5 L281.4,153.5 L282.1,153.5 L282.7,153.5 L283.3,153.5 L284,153.5 L284.6,153.5 L285.2,153.5 L285.9,153.5 L286.5,153.5 L287.1,153.5 L287.8,153.4 L288.4,152.4 L289,152.4 L289.7,151.6 L290.3,151.9 L290.9,152.8 L291.6,153 L292.2,153 L292.8,153 L293.5,153 L294.1,153 L294.7,153 L295.4,153 L296,153 L296.6,152.6 L297.2,153.3 L297.9,152.1 L298.5,152.3 L299.1,151.9 L299.8,151.7 L300.4,152.4 L301,152.6 L301.7,152.6 L302.3,152.6 L302.9,152.6 L303.6,152.6 L304.2,152.6 L304.8,152.1 L305.5,151.7 L306.1,152 L306.7,152 L307.4,152.8 L308,152.8 L308.6,152.8 L309.3,152.8 L309.9,152.8 L310.5,152.8 L311.1,152.8 L311.8,152.6 L312.4,152.6 L313.1,152.3 L313.7,153.2 L314.3,153.2 L315,153.3 L315.6,153.9 L316.2,153.9 L316.9,153.8 L317.5,153 L318.1,153.4 L318.8,152.8 L319.4,153.1 L320,152.4 L320.6,152.2 L321.3,151.9 L321.9,152.6 L322.5,152.7 L323.2,152.7 L323.8,152.7 L324.4,152.7 L325.1,152.7 L325.7,152.7 L326.3,152.7 L327,152.7 L327.6,152.7 L328.2,152.7 L328.9,152.7 L329.5,152.7 L330.1,152.7 L330.8,152.7 L331.4,152 L332,151.7 L332.7,151.5 L333.3,151.4 L333.9,150.7 L334.6,150.4 L335.2,150.3 L335.8,150.8 L336.5,150.2 L337.1,149.9 L337.7,149.6 L338.4,149.1 L339,148.7 L339.6,148.8 L340.3,148.3 L340.9,148 L341.5,148 L342.2,148.1 L342.8,147.3 L343.3,147.2 L344.1,147.5 L344.7,148 L345.3,148.2 L345.9,148.2 L346.6,148.2 L347.2,148.2 L347.8,147.8 L348.5,147.8 L349.1,147.9 L349.7,147.5 L350.4,147.1 L351,146.9 L351.6,146.9 L352.3,146.4 L352.9,146.1 L353.5,146.7 L354.2,147 L354.8,147 L355.4,147 L356.1,147 L356.7,146.9 L357.3,146.8 L358,147.8 L358.6,147.8 L359.2,147.8 L359.9,147.7 L360.5,147.6 L361.1,147.3 L361.8,147 L362.4,147.3 L363,147.7 L363.7,146.4 L364.3,147 L364.9,146.5 L365.6,146.2 L366.2,145.9 L366.8,146.1 L367.5,147.1 L368.1,147.1 L368.7,147.1 L369.3,147.1 L370,147.1 L370.6,147 L371.2,147.3 L371.9,147.7 L372.5,147.7 L373.1,148.2 L373.8,148.3 L374.4,148.3 L375,148.3 L375.7,148.3 L376.3,148.3 L376.9,148.3 L377.6,148.3 L378.1,148.3 L378.8,148.3 L379.5,148.3 L380.1,148.2 L380.7,147.2 L381.4,147.7 L382,147.4 L382.6,147 L383.3,147.1 L383.9,147.1 L384.5,146.4 L385.1,146.1 L385.8,146.1 L386.4,146 L387.1,145.7 L387.7,146.2 L388.3,145.7 L389,145.5 L389.6,145.4 L390.2,145.4 L390.9,145.3 L391.5,145 L392.1,144.7 L392.8,144.8 L393.4,144.5 L394,145.1 L394.6,144.7 L395.3,144.3 L395.9,144.1 L396.5,144.5 L397.2,144.5 L397.8,144.8 L398.4,144.8 L399.1,144.8 L399.7,145 L400.3,145 L401,144.6 L401.6,144.9 L402.2,144.5 L402.9,144.6 L403.5,144.7 L404.1,144.5 L404.8,145.2 L405.4,145.2 L406,145.2 L406.7,145.2 L407.3,145.2 L407.9,145.2 L408.6,145.2 L409.2,145.2 L409.7,145.2 L410.5,145.3 L411.1,144 L411.7,143.9 L412.4,143.6 L413,142.9 L413.6,142.8 L414.3,142.6 L414.9,142.1 L415.5,142.9 L416.2,143.2 L416.7,143.2 L417.4,143.2 L418,143.2 L418.7,143.2 L419.3,143.5 L419.9,143.8 L420.6,143.8 L421.2,143.3 L421.8,143.2 L422.5,143.6 L423.1,143.5 L423.7,143.4 L424.4,143.9 L425,143.9 L425.6,144 L426,144.3" vector-effect="non-scaling-stroke"/><circle class="dot s1" cx="426" cy="144.3" r="4"><title>SPY: $12,812 at 2026-09</title></circle><path class="line s2" d="M64.5,166.3 L65.1,165.6 L65.8,165.5 L66.4,165.3 L67,165.9 L67.7,165.4 L68.3,165.4 L68.9,165.3 L69.6,166 L70.2,166.4 L70.7,166 L71.4,166.1 L72.1,166.5 L72.7,166.5 L73.4,166.5 L74,166.5 L74.6,166.5 L75.3,166.5 L75.9,166.5 L76.5,166.5 L77.1,166.5 L77.8,166.3 L78.4,166.1 L79,166.2 L79.7,165.7 L80.3,165.9 L80.9,165.7 L81.6,165.9 L82.2,165.9 L82.8,165.9 L83.5,165.9 L84.1,165.9 L84.7,165.8 L85.4,165.9 L86,166.1 L86.6,166.4 L87.3,166.4 L87.9,166.3 L88.5,166 L89.2,165.7 L89.8,165.5 L90.4,165.2 L91.1,164.8 L91.7,164.7 L92.3,164.7 L93,164.8 L93.6,164.7 L94.2,165.1 L94.9,164.7 L95.5,164.5 L96.1,164.4 L96.8,164.5 L97.4,165 L98,165 L98.7,165.2 L99.3,165.4 L99.9,165.9 L100.6,165.6 L101.2,165.3 L101.8,165.9 L102.4,165.2 L103.1,165.1 L103.7,165 L104.3,165.3 L105,164.6 L105.6,164.4 L106.2,164.4 L106.9,163.9 L107.5,163.9 L108.1,163.6 L108.8,163.1 L109.4,163 L110,162.9 L110.7,162.8 L111.3,162.7 L111.9,162.9 L112.6,163 L113.2,163.1 L113.7,163.4 L114.5,163 L115.1,162.3 L115.7,161.9 L116.4,161.7 L117,162 L117.6,161.3 L118.3,160.9 L118.9,161.5 L119.5,161.8 L120.2,161.2 L120.8,162.1 L121.4,162.1 L122.1,162.1 L122.7,162 L123.3,162 L124,162.1 L124.6,162.6 L125.2,162.9 L125.8,162.8 L126.5,162.1 L127.1,162.4 L127.7,162.1 L128.4,162.3 L129,162.5 L129.6,162.1 L130.3,161.9 L130.9,161.9 L131.5,161.4 L132.2,161 L132.8,160.9 L133.4,160.9 L134.1,160.4 L134.7,161 L135.3,161 L136,160.4 L136.6,160.4 L137.2,160.7 L137.9,159.6 L138.5,159.2 L139.1,158.8 L139.8,158 L140.4,158.9 L141,158.9 L141.7,158.9 L142.3,158.9 L142.9,158.9 L143.6,158.9 L144.2,159.3 L144.8,159.7 L145.4,159.7 L146.1,159.7 L146.7,159.7 L147.4,159.7 L148,159.7 L148.6,159.7 L149.3,159.4 L149.9,159.6 L150.5,159.4 L151.1,159.1 L151.8,159 L152.4,158.7 L153,158.8 L153.7,159.3 L154.3,158.8 L154.9,158.3 L155.6,158.4 L156.2,158.7 L156.8,158.2 L157.5,158.1 L158.1,158.2 L158.7,157.9 L159.4,157.4 L160,158 L160.6,157.8 L161.3,157.8 L161.9,157.5 L162.5,158.3 L163.2,158.3 L163.8,158.3 L164.4,158.3 L165.1,158.3 L165.7,158.3 L166.3,158.3 L167,158.3 L167.6,158.3 L168.2,158.3 L168.9,158.3 L169.5,158.3 L170.1,158.3 L170.8,158.3 L171.4,158.3 L172,158.3 L172.7,158.4 L173.3,158.4 L173.9,158.6 L174.5,158.3 L175.2,158.2 L175.8,158.1 L176.4,158.4 L177.1,157.7 L177.7,157.7 L178.3,157.6 L179,157.1 L179.6,157 L180.2,156.9 L180.9,156.5 L181.5,156.5 L182.1,156.8 L182.8,157.7 L183.4,158.1 L184,158.3 L184.7,158.3 L185.3,158.3 L185.9,158 L186.6,158.2 L187.2,157.7 L187.8,157.4 L188.5,157.7 L189.1,157.2 L189.7,157.9 L190.4,158.5 L191,158.5 L191.6,158.9 L192.3,158.4 L192.9,158 L193.5,157.9 L194.2,158.1 L194.8,158.4 L195.4,158.5 L196.1,158.2 L196.7,158.2 L197.3,157.8 L198,157.5 L198.6,157.3 L199.2,157.1 L199.8,157.2 L200.5,156.9 L201.1,157.1 L201.7,156.8 L202.4,156.2 L203,155.9 L203.6,155.8 L204.3,155.2 L204.9,154.6 L205.5,154.7 L206.2,155.8 L206.8,154.6 L207.4,153.9 L208.1,154.4 L208.7,155.5 L209.3,155.5 L210,155.5 L210.6,155.5 L211.2,155.5 L211.9,155.5 L212.4,155.5 L213.1,155.5 L213.8,155.4 L214.4,155.4 L215,155 L215.7,155 L216.3,154.8 L216.9,154.6 L217.6,154.4 L218.2,154.7 L218.8,154.6 L219.5,154.8 L220,154.2 L220.7,153.5 L221.4,153.8 L222,154 L222.6,153.4 L223.2,153.1 L223.9,153.1 L224.5,152.6 L225.1,152 L225.8,152.2 L226.4,152.3 L227,152.6 L227.7,152.6 L228.3,152.7 L228.9,152.2 L229.6,152.1 L230.2,152.3 L230.8,153.1 L231.5,151.7 L232.1,151.9 L232.7,152 L233.4,151.5 L234,151.2 L234.6,151.4 L235.3,150.9 L235.8,150.9 L236.4,150.7 L237.2,150.4 L237.8,150.8 L238.4,150.1 L239.1,150.7 L239.7,150.3 L240.3,150.1 L241,150.4 L241.6,151.1 L242.2,151.5 L242.9,151.5 L243.5,151.7 L244.1,151.6 L244.7,151.2 L245.4,150.7 L246,150.5 L246.7,150.6 L247.3,150.7 L247.9,150.8 L248.5,151.7 L249.2,151.9 L249.8,151.6 L250.4,151.5 L251.1,151.2 L251.7,151.1 L252.3,150.7 L253,150.2 L253.6,150.1 L254.2,150.3 L254.9,149.7 L255.5,149.9 L256.1,149.7 L256.8,149.7 L257.4,149.7 L258,149.3 L258.7,149 L259.3,149.3 L259.9,149.4 L260.6,149.6 L261.2,150.5 L261.8,150.5 L262.5,150.5 L263.1,150.5 L263.7,149.8 L264.4,149 L265,149.3 L265.6,148.7 L266.3,149.5 L266.9,150.5 L267.5,150.3 L268.2,150.8 L268.7,151.1 L269.4,151.3 L270.1,152 L270.7,152 L271.3,152 L271.9,152 L272.6,152 L273.2,152 L273.8,152 L274.5,152 L275.1,152 L275.7,152 L276.4,152 L277,152 L277.6,152 L278.3,152.5 L278.8,152.7 L279.5,152.7 L280.2,152.7 L280.8,152.7 L281.4,152.7 L282.1,152.7 L282.7,152.7 L283.3,152.7 L284,152.7 L284.6,152.7 L285.2,152.7 L285.9,152.7 L286.5,152.7 L287.1,152.7 L287.8,152.7 L288.4,152.7 L289,152.7 L289.7,152.7 L290.3,152.7 L290.9,152.7 L291.6,152.7 L292.2,152.7 L292.8,152.7 L293.5,152.7 L294.1,152.7 L294.7,152.7 L295.4,152.7 L296,152.7 L296.6,152.7 L297.2,152.7 L297.9,152.7 L298.5,152.7 L299.1,152.7 L299.8,152.7 L300.4,152.7 L301,152.7 L301.7,152.7 L302.3,152.7 L302.9,152.7 L303.6,152.7 L304.2,152.7 L304.8,152.7 L305.5,152.7 L306.1,152.7 L306.7,152.7 L307.4,152.7 L308,152.7 L308.6,152.7 L309.3,152.7 L309.9,152.7 L310.5,152.7 L311.1,152.7 L311.8,152.7 L312.4,152.7 L313.1,152.6 L313.7,152.5 L314.3,152.3 L315,151.6 L315.6,150.8 L316.2,150.4 L316.9,150.4 L317.5,149.6 L318.1,149.9 L318.8,149.4 L319.4,149.7 L320,148.8 L320.6,149 L321.3,148.5 L321.9,149.3 L322.5,149.4 L323.2,149.8 L323.8,149.5 L324.4,148.7 L325.1,149 L325.7,149.1 L326.3,149.7 L327,149.7 L327.6,149.7 L328.2,149.9 L328.9,150.5 L329.5,150.6 L330.1,150.6 L330.8,150.1 L331.4,149.7 L332,149.5 L332.7,149.5 L333.3,149.4 L333.9,148.7 L334.6,148.5 L335.2,148.4 L335.8,149 L336.5,148.1 L337.1,147.3 L337.7,147.1 L338.4,146.7 L339,146.2 L339.6,146.6 L340.3,147.4 L340.9,146.9 L341.5,147.3 L342.2,147.6 L342.8,146.8 L343.3,147 L344.1,147.2 L344.7,147.3 L345.3,147.7 L345.9,147.7 L346.6,147.7 L347.2,147.7 L347.8,147.3 L348.5,147 L349.1,147.7 L349.7,147.1 L350.4,146.2 L351,146.2 L351.6,146.2 L352.3,145.2 L352.9,145.3 L353.5,145.9 L354.2,146.6 L354.8,146.6 L355.4,146.6 L356.1,146.6 L356.7,146.6 L357.3,146.6 L358,146.6 L358.6,146.5 L359.2,146.2 L359.9,146.1 L360.5,146 L361.1,145.8 L361.8,145.8 L362.4,145.8 L363,146 L363.7,145.1 L364.3,145.8 L364.9,145.4 L365.6,145.2 L366.2,144.4 L366.8,144.2 L367.5,144.4 L368.1,144.2 L368.7,144.9 L369.3,145.6 L370,145 L370.6,144.7 L371.2,145 L371.9,144.9 L372.5,144.3 L373.1,144.8 L373.8,145.1 L374.4,145.1 L375,145.1 L375.7,145.1 L376.3,145.1 L376.9,145.1 L377.6,145.1 L378.1,145.1 L378.8,145.1 L379.5,145.1 L380.1,145.2 L380.7,144.3 L381.4,144.7 L382,144.4 L382.6,144.1 L383.3,144.2 L383.9,144.2 L384.5,143.6 L385.1,143.4 L385.8,143.5 L386.4,143.3 L387.1,143.1 L387.7,143.5 L388.3,143.1 L389,142.9 L389.6,143.3 L390.2,143.4 L390.9,143.1 L391.5,142.6 L392.1,142 L392.8,142.1 L393.4,141.8 L394,142.2 L394.6,141.9 L395.3,141.3 L395.9,140.7 L396.5,141.6 L397.2,141.9 L397.8,142.5 L398.4,142.3 L399.1,142.1 L399.7,142.4 L400.3,142.3 L401,142.1 L401.6,142.4 L402.2,142.1 L402.9,142.2 L403.5,142.2 L404.1,142.2 L404.8,142.5 L405.4,142.5 L406,142.5 L406.7,142.8 L407.3,143.1 L407.9,143.3 L408.6,143.5 L409.2,143.5 L409.7,143.5 L410.5,143.4 L411.1,142.3 L411.7,141.9 L412.4,141.6 L413,140.5 L413.6,140.6 L414.3,140.3 L414.9,139.7 L415.5,140.4 L416.2,140.4 L416.7,140.4 L417.4,140.4 L418,140.4 L418.7,140.4 L419.3,140.4 L419.9,140.4 L420.6,140.4 L421.2,140.3 L421.8,140.1 L422.5,140.5 L423.1,140.5 L423.7,140.4 L424.4,140.5 L425,140.7 L425.6,139.8 L426,140.1" vector-effect="non-scaling-stroke"/><circle class="dot s2" cx="426" cy="140.1" r="4"><title>QQQ: $13,346 at 2026-09</title></circle><path class="line s3" d="M64.7,165.9 L65.3,164.5 L65.9,161.9 L66.6,160 L67.2,160 L67.8,160 L68.5,159.3 L69.1,159.1 L69.7,158.4 L70.4,158.3 L71,158.7 L71.6,158.6 L72.3,158.3 L72.9,158.8 L73.5,158.8 L74.2,158.8 L74.8,158.8 L75.4,158.8 L76.1,158 L76.7,158.1 L77.3,158.9 L78,158.8 L78.6,158.8 L79.2,158.4 L79.9,158.6 L80.5,158.7 L81.1,158.7 L81.8,158.6 L82.4,159.3 L83,159.1 L83.7,159.1 L84.3,159.9 L84.9,156 L85.6,153.9 L86.2,149.5 L86.8,145.5 L87.4,149.2 L88.1,149.2 L88.7,149.5 L89.3,149.2 L90,149.4 L90.6,149.6 L91.2,149.6 L91.9,149.6 L92.5,149.6 L93.1,149.6 L93.8,149.6 L94.4,149.8 L95,149.7 L95.7,149.8 L96.3,149.4 L96.9,149.1 L97.6,149.1 L98.2,148.1 L98.8,146.2 L99.5,147 L100.1,147.2 L100.7,146.7 L101.4,146.6 L102,145.8 L102.6,145.9 L103.3,145.5 L103.9,144.1 L104.5,142.5 L105.2,141.5 L105.8,141.5 L106.4,141.5 L107.1,141.4 L107.7,140.5 L108.3,140.9 L109,140.5 L109.6,139.4 L110.2,138.5 L110.9,139.1 L111.5,140.1 L112.1,140.1 L112.7,140.1 L113.4,139.7 L114,139.8 L114.6,139.6 L115.3,138.6 L115.9,136.9 L116.5,136.5 L117.2,135.4 L117.8,134.9 L118.4,134.2 L119.1,133.3 L119.7,134.3 L120.3,134.2 L121,134.3 L121.6,134.3 L122.2,134.6 L122.9,134.6 L123.5,134.6 L124.1,134.6 L124.8,133.2 L125.4,133.2 L126,132.6 L126.7,132.2 L127.3,133.3 L127.9,133.7 L128.6,133.7 L129.2,133.7 L129.8,133.1 L130.5,131.4 L131.1,130.9 L131.7,130.6 L132.4,128.6 L133,130.3 L133.6,128.6 L134.3,127.5 L134.9,125.9 L135.5,123 L136.1,121.9 L136.8,123.1 L137.4,123.5 L138,123 L138.7,123.6 L139.3,123.7 L139.9,123.7 L140.6,123.7 L141.2,123.7 L141.8,123.7 L142.5,123.7 L143.1,123.4 L143.7,124.4 L144.4,124.4 L145,124.4 L145.6,124.4 L146.3,124.4 L146.9,124.4 L147.5,124.4 L148.2,124.4 L148.8,124.4 L149.4,124.4 L150.1,124.4 L150.7,124.4 L151.3,124.4 L152,124.4 L152.6,124.4 L153.2,124.4 L153.9,124.4 L154.5,124.4 L155.1,124.4 L155.8,124.4 L156.4,125.1 L157,126.3 L157.7,126.4 L158.3,126.4 L158.9,126.4 L159.6,126.4 L160.2,126.4 L160.8,126.4 L161.4,126.4 L162.1,126.4 L162.7,126.4 L163.3,126.4 L164,126.4 L164.6,126.4 L165.2,126.4 L165.9,127 L166.5,127.3 L167.1,127.3 L167.8,127.3 L168.4,127.3 L169,127.3 L169.7,127.3 L170.3,127.3 L170.9,127.3 L171.6,127.3 L172.2,127.3 L172.8,127.3 L173.5,127.3 L174.1,127.3 L174.7,127.3 L175.4,127.3 L176,127.3 L176.6,127.3 L177.3,127.3 L177.9,127.3 L178.5,128.1 L179.2,127.2 L179.8,127.3 L180.4,126.9 L181.1,127 L181.7,125.4 L182.3,121.7 L183,120.2 L183.6,119.7 L184.2,119.6 L184.8,121 L185.5,119.6 L186.1,117.6 L186.7,117.3 L187.4,117.3 L188,117.3 L188.6,117.3 L189.3,117.3 L189.9,117.2 L190.5,116.8 L191.2,117.7 L191.8,118.3 L192.4,118.8 L193.1,119 L193.7,119.1 L194.3,119.4 L195,119.7 L195.6,119.7 L196.2,119.7 L196.9,119.7 L197.5,119.7 L198.1,119.7 L198.8,119.7 L199.4,119.7 L200,119.7 L200.7,119.7 L201.3,119.7 L201.9,119.7 L202.6,119.7 L203.2,119.7 L203.8,119.7 L204.5,119.7 L205.1,119.7 L205.7,119.9 L206.4,118.7 L207,117.5 L207.6,117.8 L208.3,117.8 L208.9,118.5 L209.5,118.5 L210.1,118.5 L210.8,118.5 L211.4,118.5 L212,118.5 L212.7,118.5 L213.3,118.7 L213.9,118.4 L214.6,116.8 L215.2,116.9 L215.8,115.9 L216.5,116.7 L217.1,116.9 L217.7,116.7 L218.4,116.7 L219,116.7 L219.6,116.7 L220.3,116.7 L220.9,117.1 L221.5,117.3 L222.2,115.9 L222.8,113.7 L223.4,112.5 L224.1,112.1 L224.7,112.5 L225.3,113.2 L226,114.1 L226.6,114.1 L227.2,114.1 L227.9,114.1 L228.5,114.1 L229.1,113.5 L229.8,113.3 L230.4,110.8 L231,109.7 L231.7,106.9 L232.3,106.1 L232.9,102.2 L233.5,104.3 L234.2,103.7 L234.8,103.8 L235.4,101.5 L236.1,100 L236.7,96.6 L237.3,93.7 L238,96.2 L238.6,96.2 L239.2,96.2 L239.9,96.2 L240.5,96.2 L241.1,94.8 L241.8,96.3 L242.4,95.6 L243,94.5 L243.7,94.7 L244.3,94.9 L244.9,94.6 L245.6,94.4 L246.2,95 L246.8,95 L247.5,95.2 L248.1,94.9 L248.7,96.3 L249.4,96.3 L250,96.3 L250.6,96.3 L251.3,96.3 L251.9,96.3 L252.5,96.3 L253.2,96.3 L253.8,96.3 L254.4,96.3 L255.1,96.3 L255.7,96.3 L256.3,96.3 L257,96.3 L257.6,96.3 L258.2,96.8 L258.8,96.8 L259.5,96.8 L260.1,96.8 L260.7,97.9 L261.4,98 L262,96.7 L262.6,95.4 L263.3,95.5 L263.9,95.5 L264.5,95.1 L265.2,94.7 L265.8,96.2 L266.4,96.4 L267.1,97.3 L267.7,97.3 L268.3,97.3 L269,97.3 L269.6,97.3 L270.2,97.3 L270.9,97.3 L271.5,97.3 L272.1,97.3 L272.8,97.3 L273.4,97.3 L274,97.3 L274.7,97.3 L275.3,97.3 L275.9,97.3 L276.6,97.3 L277.2,97.3 L277.8,97.3 L278.5,97.3 L279.1,97.3 L279.7,97.3 L280.4,97.3 L281,97.3 L281.6,97.3 L282.2,97.3 L282.9,97.3 L283.5,97.3 L284.1,97.3 L284.8,97.3 L285.4,97.3 L286,97.3 L286.7,97.3 L287.3,97.3 L287.9,97.3 L288.6,97.3 L289.2,97.3 L289.8,97.3 L290.5,97.3 L291.1,97.3 L291.7,97.3 L292.4,97.3 L293,97.3 L293.6,97.3 L294.3,97.3 L294.9,97.3 L295.5,97.3 L296.2,97.3 L296.8,97.5 L297.4,98 L298.1,98 L298.7,98 L299.3,98 L300,98 L300.6,98 L301.2,98 L301.9,98 L302.5,98 L303.1,98 L303.8,96.9 L304.4,94.6 L305,93.3 L305.7,94.3 L306.3,95.6 L306.9,93.6 L307.5,94.2 L308.2,95 L308.8,95 L309.4,92.9 L310.1,93 L310.7,92.9 L311.3,92.8 L312,91.7 L312.6,93.2 L313.2,92.3 L313.9,92.8 L314.5,93.8 L315.1,93.8 L315.8,93.8 L316.4,93.8 L317,93.8 L317.7,93.8 L318.3,92.6 L318.9,92.5 L319.6,92.8 L320.2,92.7 L320.8,92.8 L321.5,93.3 L322.1,93.5 L322.7,93.2 L323.4,93.2 L324,93.2 L324.6,93.2 L325.3,93.2 L325.9,93.2 L326.5,93.4 L327.2,93.5 L327.8,93.2 L328.4,93.9 L329.1,92.7 L329.7,92 L330.3,91.7 L330.9,90.6 L331.6,90.5 L332.2,90.4 L332.8,89.1 L333.5,87.1 L334.1,88.9 L334.7,88.3 L335.4,88.6 L336,87.9 L336.6,88.8 L337.3,88.8 L337.9,88.8 L338.5,89.1 L339.2,87.1 L339.8,85.7 L340.4,85.9 L341.1,81.9 L341.7,82.6 L342.3,82.6 L343,82.6 L343.6,82.6 L344.2,82.6 L344.9,84.3 L345.5,84.3 L346.1,84.3 L346.8,84.3 L347.4,84.3 L348,84.3 L348.7,83.9 L349.3,84 L349.9,83.7 L350.6,84.4 L351.2,85.4 L351.8,85.9 L352.5,85.9 L353.1,85.9 L353.7,85.9 L354.4,86.4 L355,86.4 L355.6,86.4 L356.2,86.4 L356.9,86.4 L357.5,86.7 L358.1,86.7 L358.8,86.7 L359.4,86.7 L360,86.7 L360.7,86.7 L361.3,86.7 L361.9,86.3 L362.6,86.6 L363.2,86.4 L363.8,83.5 L364.5,81.2 L365.1,79.2 L365.7,79.4 L366.4,78.4 L367,77.7 L367.6,80.4 L368.3,80.6 L368.9,80 L369.5,80.9 L370.2,80.9 L370.8,80.6 L371.4,81.4 L372.1,82 L372.7,82 L373.3,82 L374,82 L374.6,82 L375.2,82 L375.9,82 L376.5,82 L377.1,82 L377.8,82 L378.4,82 L379,82.2 L379.6,82.1 L380.3,80.6 L380.9,80.9 L381.5,80.3 L382.2,81.4 L382.8,81.4 L383.4,81.4 L384.1,82.2 L384.7,81.8 L385.3,81.6 L386,80 L386.6,80.3 L387.2,79.9 L387.9,81.2 L388.5,80.4 L389.1,80.8 L389.8,82.1 L390.4,83.2 L391,83.2 L391.7,83.3 L392.3,83.3 L392.9,84.3 L393.6,82.3 L394.2,83.9 L394.8,84.8 L395.5,84 L396.1,84.9 L396.7,84.9 L397.4,84.9 L398,84.9 L398.6,84.9 L399.3,84.9 L399.9,84.9 L400.5,84.9 L401.2,84.9 L401.8,84.9 L402.4,84.9 L403.1,84.9 L403.7,84.9 L404.3,84.9 L404.9,84.9 L405.6,84.9 L406.2,84.9 L406.8,84.9 L407.5,84.9 L408.1,84.9 L408.7,84.9 L409.4,84.9 L410,84.9 L410.6,84.9 L411.3,84.9 L411.9,84.9 L412.5,84.9 L413.2,84.9 L413.8,84.9 L414.4,84.9 L415.1,84.9 L415.7,84.9 L416.3,84.9 L417,84.9 L417.6,84.9 L418.2,84.9 L418.9,84.9 L419.5,84.9 L420.1,84.9 L420.8,84.9 L421.4,84.9 L422,84.9 L422.7,85.4 L423.3,85.7 L423.9,85.8 L424.6,85.8 L425.2,86.6 L425.8,85.8 L426,86.1" vector-effect="non-scaling-stroke"/><circle class="dot s3" cx="426" cy="86.1" r="4"><title>BTC/USD: $20,181 at 2026-09</title></circle></svg>
+    <figcaption>Each winner backtested alone on its own capital, full history, weekly closes.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="bt-board-h">
+  <h2 id="bt-board-h">Leaderboards</h2>
+  <p class="muted">Survivors first, by in-sample score. IS = in-sample, OOS = out-of-sample. PF = profit factor (&infin; means no losing trades). Neighbours = share of adjacent grid points that also survive, a robustness hint.</p>
+  <h3>SPY: 24 of 30 survived</h3>
+<div class="table-wrap" role="region" aria-label="Leaderboard for SPY" tabindex="0">  <table class="board">
+    <thead>
+      <tr><th scope="col" rowspan="2">Rank</th><th scope="col" rowspan="2">Configuration</th><th scope="col" rowspan="2">Result</th>
+          <th scope="colgroup" colspan="5">In-sample</th><th scope="colgroup" colspan="5">Out-of-sample</th>
+          <th scope="col" rowspan="2" class="num">Neighbours</th><th scope="col" rowspan="2" class="num">Score</th><th scope="col" rowspan="2">Fail reasons</th></tr>
+      <tr><th scope="col" class="num">CAGR</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th>
+          <th scope="col" class="num">Return</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th></tr>
+    </thead>
+    <tbody>
+      <tr class="winner">
+        <td class="num">1</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=20,exit_n=20)</th>
+        <td><span class="tag ok">&#9733; winner</span></td>
+        <td class="num">+2.71%</td><td class="num">2.44%</td><td class="num">63.6%</td><td class="num">4.88</td><td class="num">22</td>
+        <td class="num">+9.92%</td><td class="num">2.98%</td><td class="num">42.1%</td><td class="num">2.54</td><td class="num">19</td>
+        <td class="num">66.7% of 3</td><td class="num">1.113</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">2</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=20,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.98%</td><td class="num">1.93%</td><td class="num">55.6%</td><td class="num">3.66</td><td class="num">36</td>
+        <td class="num">+8.29%</td><td class="num">2.51%</td><td class="num">56.0%</td><td class="num">2.47</td><td class="num">25</td>
+        <td class="num">100.0% of 3</td><td class="num">1.025</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">3</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=20,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.40%</td><td class="num">2.35%</td><td class="num">66.7%</td><td class="num">5.59</td><td class="num">21</td>
+        <td class="num">+10.42%</td><td class="num">2.19%</td><td class="num">50.0%</td><td class="num">3.94</td><td class="num">16</td>
+        <td class="num">100.0% of 3</td><td class="num">1.020</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">4</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=20,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.29%</td><td class="num">2.42%</td><td class="num">55.6%</td><td class="num">3.72</td><td class="num">36</td>
+        <td class="num">+9.51%</td><td class="num">2.81%</td><td class="num">53.8%</td><td class="num">2.40</td><td class="num">26</td>
+        <td class="num">100.0% of 3</td><td class="num">0.948</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">5</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=60)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.57%</td><td class="num">2.16%</td><td class="num">61.1%</td><td class="num">3.06</td><td class="num">36</td>
+        <td class="num">+2.46%</td><td class="num">3.35%</td><td class="num">45.5%</td><td class="num">1.40</td><td class="num">22</td>
+        <td class="num">33.3% of 3</td><td class="num">0.727</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">6</td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=20,slow=200)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.96%</td><td class="num">2.92%</td><td class="num">56.2%</td><td class="num">3.01</td><td class="num">32</td>
+        <td class="num">+5.96%</td><td class="num">2.24%</td><td class="num">40.9%</td><td class="num">2.07</td><td class="num">22</td>
+        <td class="num">66.7% of 3</td><td class="num">0.670</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">7</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=55,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.75%</td><td class="num">3.03%</td><td class="num">68.4%</td><td class="num">4.15</td><td class="num">19</td>
+        <td class="num">+5.01%</td><td class="num">4.71%</td><td class="num">46.2%</td><td class="num">1.83</td><td class="num">13</td>
+        <td class="num">66.7% of 3</td><td class="num">0.577</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">8</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=252)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.57%</td><td class="num">2.94%</td><td class="num">58.1%</td><td class="num">2.66</td><td class="num">31</td>
+        <td class="num">+4.51%</td><td class="num">2.12%</td><td class="num">60.0%</td><td class="num">2.03</td><td class="num">15</td>
+        <td class="num">66.7% of 3</td><td class="num">0.536</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">9</td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=50,slow=100)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.70%</td><td class="num">3.33%</td><td class="num">48.8%</td><td class="num">2.11</td><td class="num">41</td>
+        <td class="num">+2.93%</td><td class="num">3.73%</td><td class="num">40.0%</td><td class="num">1.40</td><td class="num">25</td>
+        <td class="num">66.7% of 3</td><td class="num">0.511</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">10</td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=20,slow=200)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.67%</td><td class="num">3.52%</td><td class="num">46.7%</td><td class="num">1.83</td><td class="num">45</td>
+        <td class="num">+5.61%</td><td class="num">3.42%</td><td class="num">41.9%</td><td class="num">1.55</td><td class="num">31</td>
+        <td class="num">100.0% of 3</td><td class="num">0.475</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">11</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=55,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.07%</td><td class="num">2.37%</td><td class="num">50.0%</td><td class="num">2.15</td><td class="num">32</td>
+        <td class="num">+3.73%</td><td class="num">3.70%</td><td class="num">47.4%</td><td class="num">1.58</td><td class="num">19</td>
+        <td class="num">100.0% of 3</td><td class="num">0.453</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">12</td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=50,slow=200)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.47%</td><td class="num">3.38%</td><td class="num">43.3%</td><td class="num">2.35</td><td class="num">30</td>
+        <td class="num">+6.37%</td><td class="num">2.37%</td><td class="num">50.0%</td><td class="num">2.25</td><td class="num">20</td>
+        <td class="num">66.7% of 3</td><td class="num">0.434</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">13</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=55,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.10%</td><td class="num">2.69%</td><td class="num">50.0%</td><td class="num">2.07</td><td class="num">32</td>
+        <td class="num">+2.70%</td><td class="num">4.86%</td><td class="num">45.0%</td><td class="num">1.34</td><td class="num">20</td>
+        <td class="num">66.7% of 3</td><td class="num">0.408</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">14</td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=20,slow=100)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.61%</td><td class="num">4.00%</td><td class="num">44.0%</td><td class="num">1.93</td><td class="num">50</td>
+        <td class="num">+3.10%</td><td class="num">4.23%</td><td class="num">41.9%</td><td class="num">1.26</td><td class="num">31</td>
+        <td class="num">66.7% of 3</td><td class="num">0.402</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">15</td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=50,slow=200)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.22%</td><td class="num">3.04%</td><td class="num">50.0%</td><td class="num">1.72</td><td class="num">38</td>
+        <td class="num">+7.82%</td><td class="num">3.12%</td><td class="num">45.8%</td><td class="num">2.29</td><td class="num">24</td>
+        <td class="num">100.0% of 3</td><td class="num">0.401</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">16</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=10,max_hold=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.74%</td><td class="num">2.20%</td><td class="num">67.3%</td><td class="num">1.55</td><td class="num">52</td>
+        <td class="num">+1.95%</td><td class="num">2.51%</td><td class="num">60.0%</td><td class="num">1.28</td><td class="num">45</td>
+        <td class="num">100.0% of 3</td><td class="num">0.335</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">17</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=10,max_hold=5)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.71%</td><td class="num">2.20%</td><td class="num">67.3%</td><td class="num">1.51</td><td class="num">52</td>
+        <td class="num">+1.59%</td><td class="num">2.85%</td><td class="num">60.0%</td><td class="num">1.22</td><td class="num">45</td>
+        <td class="num">100.0% of 3</td><td class="num">0.321</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">18</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=252)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.45%</td><td class="num">4.67%</td><td class="num">48.2%</td><td class="num">1.55</td><td class="num">56</td>
+        <td class="num">+7.09%</td><td class="num">3.14%</td><td class="num">50.0%</td><td class="num">1.66</td><td class="num">28</td>
+        <td class="num">33.3% of 3</td><td class="num">0.311</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">19</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=5,max_hold=5)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.61%</td><td class="num">2.18%</td><td class="num">75.0%</td><td class="num">2.12</td><td class="num">28</td>
+        <td class="num">+2.35%</td><td class="num">2.40%</td><td class="num">65.2%</td><td class="num">1.61</td><td class="num">23</td>
+        <td class="num">100.0% of 3</td><td class="num">0.279</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">20</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=5,max_hold=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.61%</td><td class="num">2.18%</td><td class="num">75.0%</td><td class="num">2.12</td><td class="num">28</td>
+        <td class="num">+2.71%</td><td class="num">2.05%</td><td class="num">65.2%</td><td class="num">1.76</td><td class="num">23</td>
+        <td class="num">100.0% of 3</td><td class="num">0.279</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">21</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=10,max_hold=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.58%</td><td class="num">3.13%</td><td class="num">69.4%</td><td class="num">1.54</td><td class="num">49</td>
+        <td class="num">+3.06%</td><td class="num">2.26%</td><td class="num">65.9%</td><td class="num">1.55</td><td class="num">44</td>
+        <td class="num">100.0% of 3</td><td class="num">0.186</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">22</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=5,max_hold=5)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.40%</td><td class="num">2.41%</td><td class="num">77.8%</td><td class="num">1.65</td><td class="num">27</td>
+        <td class="num">+3.47%</td><td class="num">1.84%</td><td class="num">65.2%</td><td class="num">2.47</td><td class="num">23</td>
+        <td class="num">100.0% of 3</td><td class="num">0.166</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">23</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=5,max_hold=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.40%</td><td class="num">2.41%</td><td class="num">77.8%</td><td class="num">1.65</td><td class="num">27</td>
+        <td class="num">+3.54%</td><td class="num">1.77%</td><td class="num">65.2%</td><td class="num">2.54</td><td class="num">23</td>
+        <td class="num">100.0% of 3</td><td class="num">0.166</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">24</td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=10,max_hold=5)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.42%</td><td class="num">2.72%</td><td class="num">69.4%</td><td class="num">1.34</td><td class="num">49</td>
+        <td class="num">+3.40%</td><td class="num">2.23%</td><td class="num">64.4%</td><td class="num">1.65</td><td class="num">45</td>
+        <td class="num">100.0% of 3</td><td class="num">0.155</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=50,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+2.12%</td><td class="num">3.30%</td><td class="num">53.1%</td><td class="num">3.32</td><td class="num">32</td>
+        <td class="num">+3.07%</td><td class="num">2.16%</td><td class="num">38.1%</td><td class="num">1.51</td><td class="num">21</td>
+        <td class="num">66.7% of 3</td><td class="num">0.643</td>
+        <td class="wrap-text">OOS win_rate 0.38 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=20,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.77%</td><td class="num">2.76%</td><td class="num">47.4%</td><td class="num">2.75</td><td class="num">38</td>
+        <td class="num">+4.33%</td><td class="num">2.70%</td><td class="num">36.4%</td><td class="num">1.66</td><td class="num">22</td>
+        <td class="num">66.7% of 3</td><td class="num">0.640</td>
+        <td class="wrap-text">OOS win_rate 0.36 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=55,exit_n=20)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.66%</td><td class="num">2.92%</td><td class="num">54.5%</td><td class="num">3.14</td><td class="num">22</td>
+        <td class="num">+3.20%</td><td class="num">5.76%</td><td class="num">37.5%</td><td class="num">1.37</td><td class="num">16</td>
+        <td class="num">100.0% of 3</td><td class="num">0.571</td>
+        <td class="wrap-text">OOS win_rate 0.38 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=120)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.37%</td><td class="num">2.93%</td><td class="num">54.3%</td><td class="num">2.57</td><td class="num">35</td>
+        <td class="num">+2.61%</td><td class="num">3.39%</td><td class="num">33.3%</td><td class="num">1.43</td><td class="num">24</td>
+        <td class="num">66.7% of 3</td><td class="num">0.466</td>
+        <td class="wrap-text">OOS win_rate 0.33 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=60)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.44%</td><td class="num">3.35%</td><td class="num">50.8%</td><td class="num">1.59</td><td class="num">59</td>
+        <td class="num">+2.46%</td><td class="num">5.08%</td><td class="num">38.9%</td><td class="num">1.17</td><td class="num">36</td>
+        <td class="num">66.7% of 3</td><td class="num">0.429</td>
+        <td class="wrap-text">OOS win_rate 0.39 &lt; 0.40; OOS profit_factor 1.17 &lt; 1.20</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=120)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.04%</td><td class="num">4.77%</td><td class="num">48.2%</td><td class="num">1.43</td><td class="num">56</td>
+        <td class="num">+2.45%</td><td class="num">5.72%</td><td class="num">34.2%</td><td class="num">1.18</td><td class="num">38</td>
+        <td class="num">33.3% of 3</td><td class="num">0.219</td>
+        <td class="wrap-text">OOS win_rate 0.34 &lt; 0.40; OOS profit_factor 1.18 &lt; 1.20</td>
+      </tr>
+    </tbody>
+  </table>
+</div>  <h3>QQQ: 18 of 30 survived</h3>
+<div class="table-wrap" role="region" aria-label="Leaderboard for QQQ" tabindex="0">  <table class="board">
+    <thead>
+      <tr><th scope="col" rowspan="2">Rank</th><th scope="col" rowspan="2">Configuration</th><th scope="col" rowspan="2">Result</th>
+          <th scope="colgroup" colspan="5">In-sample</th><th scope="colgroup" colspan="5">Out-of-sample</th>
+          <th scope="col" rowspan="2" class="num">Neighbours</th><th scope="col" rowspan="2" class="num">Score</th><th scope="col" rowspan="2">Fail reasons</th></tr>
+      <tr><th scope="col" class="num">CAGR</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th>
+          <th scope="col" class="num">Return</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th></tr>
+    </thead>
+    <tbody>
+      <tr class="winner">
+        <td class="num">1</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=252)</th>
+        <td><span class="tag ok">&#9733; winner</span></td>
+        <td class="num">+2.87%</td><td class="num">2.67%</td><td class="num">49.0%</td><td class="num">2.45</td><td class="num">49</td>
+        <td class="num">+11.77%</td><td class="num">2.96%</td><td class="num">48.1%</td><td class="num">2.55</td><td class="num">27</td>
+        <td class="num">100.0% of 3</td><td class="num">1.075</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">2</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=252)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.99%</td><td class="num">2.03%</td><td class="num">60.0%</td><td class="num">4.37</td><td class="num">25</td>
+        <td class="num">+2.58%</td><td class="num">2.68%</td><td class="num">52.9%</td><td class="num">1.42</td><td class="num">17</td>
+        <td class="num">100.0% of 3</td><td class="num">0.981</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">3</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=120)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.57%</td><td class="num">2.85%</td><td class="num">43.8%</td><td class="num">2.31</td><td class="num">48</td>
+        <td class="num">+11.42%</td><td class="num">2.73%</td><td class="num">40.6%</td><td class="num">2.47</td><td class="num">32</td>
+        <td class="num">100.0% of 3</td><td class="num">0.901</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">4</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=20,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.93%</td><td class="num">3.58%</td><td class="num">59.1%</td><td class="num">3.39</td><td class="num">22</td>
+        <td class="num">+14.06%</td><td class="num">3.99%</td><td class="num">47.1%</td><td class="num">2.74</td><td class="num">17</td>
+        <td class="num">100.0% of 3</td><td class="num">0.819</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">5</td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=20,slow=200)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.28%</td><td class="num">2.94%</td><td class="num">43.3%</td><td class="num">3.53</td><td class="num">30</td>
+        <td class="num">+6.61%</td><td class="num">2.83%</td><td class="num">43.8%</td><td class="num">2.10</td><td class="num">16</td>
+        <td class="num">66.7% of 3</td><td class="num">0.774</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">6</td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=20,slow=100)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.57%</td><td class="num">3.41%</td><td class="num">42.3%</td><td class="num">2.32</td><td class="num">52</td>
+        <td class="num">+6.89%</td><td class="num">3.05%</td><td class="num">53.6%</td><td class="num">1.82</td><td class="num">28</td>
+        <td class="num">33.3% of 3</td><td class="num">0.754</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">7</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=20,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.42%</td><td class="num">3.38%</td><td class="num">61.9%</td><td class="num">3.73</td><td class="num">21</td>
+        <td class="num">+10.58%</td><td class="num">2.44%</td><td class="num">53.3%</td><td class="num">3.51</td><td class="num">15</td>
+        <td class="num">100.0% of 3</td><td class="num">0.716</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">8</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=120)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.74%</td><td class="num">2.48%</td><td class="num">48.0%</td><td class="num">3.55</td><td class="num">25</td>
+        <td class="num">+3.49%</td><td class="num">2.52%</td><td class="num">40.9%</td><td class="num">1.62</td><td class="num">22</td>
+        <td class="num">100.0% of 3</td><td class="num">0.702</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">9</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=60)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.32%</td><td class="num">2.03%</td><td class="num">50.0%</td><td class="num">2.41</td><td class="num">34</td>
+        <td class="num">+3.66%</td><td class="num">2.09%</td><td class="num">50.0%</td><td class="num">1.69</td><td class="num">22</td>
+        <td class="num">100.0% of 3</td><td class="num">0.652</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">10</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=55,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.50%</td><td class="num">4.00%</td><td class="num">55.6%</td><td class="num">3.39</td><td class="num">18</td>
+        <td class="num">+12.44%</td><td class="num">4.25%</td><td class="num">50.0%</td><td class="num">3.91</td><td class="num">12</td>
+        <td class="num">100.0% of 3</td><td class="num">0.626</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">11</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=20,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.08%</td><td class="num">3.52%</td><td class="num">54.0%</td><td class="num">2.39</td><td class="num">37</td>
+        <td class="num">+8.60%</td><td class="num">3.71%</td><td class="num">44.4%</td><td class="num">1.79</td><td class="num">27</td>
+        <td class="num">100.0% of 3</td><td class="num">0.592</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">12</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=55,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.16%</td><td class="num">3.73%</td><td class="num">58.8%</td><td class="num">3.70</td><td class="num">17</td>
+        <td class="num">+8.64%</td><td class="num">2.71%</td><td class="num">54.5%</td><td class="num">3.74</td><td class="num">11</td>
+        <td class="num">100.0% of 3</td><td class="num">0.579</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">13</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=20,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.54%</td><td class="num">2.90%</td><td class="num">54.0%</td><td class="num">2.19</td><td class="num">37</td>
+        <td class="num">+5.92%</td><td class="num">3.15%</td><td class="num">46.2%</td><td class="num">1.77</td><td class="num">26</td>
+        <td class="num">100.0% of 3</td><td class="num">0.531</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">14</td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=20,slow=200)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+2.30%</td><td class="num">4.35%</td><td class="num">46.7%</td><td class="num">2.17</td><td class="num">45</td>
+        <td class="num">+5.78%</td><td class="num">3.24%</td><td class="num">40.7%</td><td class="num">1.57</td><td class="num">27</td>
+        <td class="num">66.7% of 3</td><td class="num">0.529</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">15</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=60)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.54%</td><td class="num">3.13%</td><td class="num">41.1%</td><td class="num">1.62</td><td class="num">56</td>
+        <td class="num">+10.17%</td><td class="num">3.21%</td><td class="num">45.5%</td><td class="num">2.16</td><td class="num">33</td>
+        <td class="num">100.0% of 3</td><td class="num">0.493</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">16</td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=50,slow=200)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.27%</td><td class="num">3.97%</td><td class="num">41.9%</td><td class="num">2.00</td><td class="num">31</td>
+        <td class="num">+8.28%</td><td class="num">2.25%</td><td class="num">43.8%</td><td class="num">2.95</td><td class="num">16</td>
+        <td class="num">33.3% of 3</td><td class="num">0.321</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">17</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=55,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+1.02%</td><td class="num">4.36%</td><td class="num">45.5%</td><td class="num">1.66</td><td class="num">33</td>
+        <td class="num">+7.75%</td><td class="num">3.11%</td><td class="num">50.0%</td><td class="num">2.07</td><td class="num">20</td>
+        <td class="num">100.0% of 3</td><td class="num">0.234</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">18</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=55,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+0.80%</td><td class="num">3.79%</td><td class="num">45.5%</td><td class="num">1.59</td><td class="num">33</td>
+        <td class="num">+4.10%</td><td class="num">3.34%</td><td class="num">50.0%</td><td class="num">1.64</td><td class="num">20</td>
+        <td class="num">100.0% of 3</td><td class="num">0.212</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=20,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+2.33%</td><td class="num">2.64%</td><td class="num">38.5%</td><td class="num">3.26</td><td class="num">39</td>
+        <td class="num">+6.16%</td><td class="num">2.51%</td><td class="num">45.0%</td><td class="num">2.09</td><td class="num">20</td>
+        <td class="num">66.7% of 3</td><td class="num">0.883</td>
+        <td class="wrap-text">IS win_rate 0.38 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=50,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.43%</td><td class="num">3.15%</td><td class="num">34.2%</td><td class="num">1.90</td><td class="num">41</td>
+        <td class="num">+8.24%</td><td class="num">1.89%</td><td class="num">57.9%</td><td class="num">3.52</td><td class="num">19</td>
+        <td class="num">33.3% of 3</td><td class="num">0.452</td>
+        <td class="wrap-text">IS win_rate 0.34 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=50,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.10%</td><td class="num">3.21%</td><td class="num">33.3%</td><td class="num">1.53</td><td class="num">48</td>
+        <td class="num">+5.26%</td><td class="num">1.91%</td><td class="num">55.0%</td><td class="num">2.23</td><td class="num">20</td>
+        <td class="num">33.3% of 3</td><td class="num">0.343</td>
+        <td class="wrap-text">IS win_rate 0.33 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=50,slow=200)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+1.26%</td><td class="num">4.05%</td><td class="num">45.7%</td><td class="num">1.78</td><td class="num">35</td>
+        <td class="num">+5.29%</td><td class="num">2.11%</td><td class="num">36.8%</td><td class="num">1.86</td><td class="num">19</td>
+        <td class="num">66.7% of 3</td><td class="num">0.310</td>
+        <td class="wrap-text">OOS win_rate 0.37 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=10,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+0.16%</td><td class="num">3.34%</td><td class="num">61.1%</td><td class="num">1.08</td><td class="num">54</td>
+        <td class="num">+4.25%</td><td class="num">2.87%</td><td class="num">67.4%</td><td class="num">1.57</td><td class="num">43</td>
+        <td class="num">0.0% of 3</td><td class="num">0.049</td>
+        <td class="wrap-text">IS profit_factor 1.08 &lt; 1.20</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=10,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.05%</td><td class="num">3.84%</td><td class="num">59.3%</td><td class="num">0.98</td><td class="num">54</td>
+        <td class="num">+3.86%</td><td class="num">3.03%</td><td class="num">65.1%</td><td class="num">1.49</td><td class="num">43</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.013</td>
+        <td class="wrap-text">IS profit_factor 0.98 &lt; 1.20; IS total_return -0.31% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=5,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.09%</td><td class="num">4.33%</td><td class="num">64.3%</td><td class="num">0.91</td><td class="num">28</td>
+        <td class="num">+2.83%</td><td class="num">1.10%</td><td class="num">80.0%</td><td class="num">2.88</td><td class="num">20</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.020</td>
+        <td class="wrap-text">IS profit_factor 0.91 &lt; 1.20; IS total_return -0.54% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=5,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.13%</td><td class="num">4.33%</td><td class="num">64.3%</td><td class="num">0.86</td><td class="num">28</td>
+        <td class="num">+2.83%</td><td class="num">1.10%</td><td class="num">80.0%</td><td class="num">2.88</td><td class="num">20</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.030</td>
+        <td class="wrap-text">IS profit_factor 0.86 &lt; 1.20; IS total_return -0.81% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=10,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.17%</td><td class="num">4.67%</td><td class="num">62.7%</td><td class="num">0.90</td><td class="num">51</td>
+        <td class="num">+5.06%</td><td class="num">1.39%</td><td class="num">76.2%</td><td class="num">2.34</td><td class="num">42</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.037</td>
+        <td class="wrap-text">IS profit_factor 0.90 &lt; 1.20; IS total_return -1.07% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=10,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.35%</td><td class="num">4.74%</td><td class="num">58.8%</td><td class="num">0.81</td><td class="num">51</td>
+        <td class="num">+4.29%</td><td class="num">1.50%</td><td class="num">71.4%</td><td class="num">1.97</td><td class="num">42</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.075</td>
+        <td class="wrap-text">IS profit_factor 0.81 &lt; 1.20; IS total_return -2.18% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=5,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.53%</td><td class="num">5.62%</td><td class="num">53.6%</td><td class="num">0.62</td><td class="num">28</td>
+        <td class="num">+4.18%</td><td class="num">1.62%</td><td class="num">76.2%</td><td class="num">3.02</td><td class="num">21</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.095</td>
+        <td class="wrap-text">IS profit_factor 0.62 &lt; 1.20; IS total_return -3.25% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=5,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.54%</td><td class="num">5.62%</td><td class="num">53.6%</td><td class="num">0.62</td><td class="num">28</td>
+        <td class="num">+4.18%</td><td class="num">1.62%</td><td class="num">76.2%</td><td class="num">3.02</td><td class="num">21</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.097</td>
+        <td class="wrap-text">IS profit_factor 0.62 &lt; 1.20; IS total_return -3.33% is not positive</td>
+      </tr>
+    </tbody>
+  </table>
+</div>  <h3>BTC/USD: 8 of 30 survived</h3>
+<div class="table-wrap" role="region" aria-label="Leaderboard for BTC/USD" tabindex="0">  <table class="board">
+    <thead>
+      <tr><th scope="col" rowspan="2">Rank</th><th scope="col" rowspan="2">Configuration</th><th scope="col" rowspan="2">Result</th>
+          <th scope="colgroup" colspan="5">In-sample</th><th scope="colgroup" colspan="5">Out-of-sample</th>
+          <th scope="col" rowspan="2" class="num">Neighbours</th><th scope="col" rowspan="2" class="num">Score</th><th scope="col" rowspan="2">Fail reasons</th></tr>
+      <tr><th scope="col" class="num">CAGR</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th>
+          <th scope="col" class="num">Return</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th></tr>
+    </thead>
+    <tbody>
+      <tr class="winner">
+        <td class="num">1</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=120)</th>
+        <td><span class="tag ok">&#9733; winner</span></td>
+        <td class="num">+10.65%</td><td class="num">6.14%</td><td class="num">48.4%</td><td class="num">4.75</td><td class="num">62</td>
+        <td class="num">+7.61%</td><td class="num">5.56%</td><td class="num">40.5%</td><td class="num">1.75</td><td class="num">37</td>
+        <td class="num">33.3% of 3</td><td class="num">1.733</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">2</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=55,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+20.43%</td><td class="num">13.59%</td><td class="num">60.0%</td><td class="num">15.56</td><td class="num">20</td>
+        <td class="num">+20.54%</td><td class="num">5.55%</td><td class="num">40.0%</td><td class="num">3.85</td><td class="num">15</td>
+        <td class="num">66.7% of 3</td><td class="num">1.503</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">3</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=60)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+8.71%</td><td class="num">7.51%</td><td class="num">50.0%</td><td class="num">10.20</td><td class="num">42</td>
+        <td class="num">+11.02%</td><td class="num">3.22%</td><td class="num">41.4%</td><td class="num">3.00</td><td class="num">29</td>
+        <td class="num">66.7% of 3</td><td class="num">1.160</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">4</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=55,exit_n=20)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+14.78%</td><td class="num">14.40%</td><td class="num">66.7%</td><td class="num">15.72</td><td class="num">18</td>
+        <td class="num">+11.94%</td><td class="num">4.42%</td><td class="num">40.0%</td><td class="num">2.99</td><td class="num">15</td>
+        <td class="num">66.7% of 3</td><td class="num">1.026</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">5</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=55,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+11.37%</td><td class="num">11.12%</td><td class="num">55.6%</td><td class="num">5.98</td><td class="num">27</td>
+        <td class="num">+23.86%</td><td class="num">4.52%</td><td class="num">47.1%</td><td class="num">3.72</td><td class="num">17</td>
+        <td class="num">66.7% of 3</td><td class="num">1.023</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">6</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=252)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+6.26%</td><td class="num">7.91%</td><td class="num">60.6%</td><td class="num">6.45</td><td class="num">33</td>
+        <td class="num">+8.15%</td><td class="num">5.68%</td><td class="num">42.9%</td><td class="num">2.71</td><td class="num">14</td>
+        <td class="num">66.7% of 3</td><td class="num">0.791</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">7</td>
+        <th scope="row" class="nowrap">momentum(atr_mult=5,lookback=120)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+6.59%</td><td class="num">8.60%</td><td class="num">56.1%</td><td class="num">5.91</td><td class="num">41</td>
+        <td class="num">+6.53%</td><td class="num">3.42%</td><td class="num">40.0%</td><td class="num">2.93</td><td class="num">25</td>
+        <td class="num">100.0% of 3</td><td class="num">0.766</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="survivor">
+        <td class="num">8</td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=55,exit_n=10)</th>
+        <td><span class="tag ok">&#10003; survivor</span></td>
+        <td class="num">+8.43%</td><td class="num">11.16%</td><td class="num">60.0%</td><td class="num">6.57</td><td class="num">25</td>
+        <td class="num">+15.77%</td><td class="num">3.50%</td><td class="num">50.0%</td><td class="num">3.90</td><td class="num">16</td>
+        <td class="num">66.7% of 3</td><td class="num">0.756</td>
+        <td class="wrap-text"></td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=252)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+10.93%</td><td class="num">4.59%</td><td class="num">48.1%</td><td class="num">5.30</td><td class="num">54</td>
+        <td class="num">+7.91%</td><td class="num">5.24%</td><td class="num">34.5%</td><td class="num">1.62</td><td class="num">29</td>
+        <td class="num">66.7% of 3</td><td class="num">2.381</td>
+        <td class="wrap-text">OOS win_rate 0.34 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=20,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+9.70%</td><td class="num">4.93%</td><td class="num">41.2%</td><td class="num">4.86</td><td class="num">51</td>
+        <td class="num">+3.98%</td><td class="num">5.86%</td><td class="num">25.0%</td><td class="num">1.25</td><td class="num">36</td>
+        <td class="num">0.0% of 3</td><td class="num">1.969</td>
+        <td class="wrap-text">OOS win_rate 0.25 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=20,exit_n=20)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+19.82%</td><td class="num">11.08%</td><td class="num">71.4%</td><td class="num">31.35</td><td class="num">21</td>
+        <td class="num">+11.49%</td><td class="num">6.78%</td><td class="num">35.7%</td><td class="num">1.74</td><td class="num">28</td>
+        <td class="num">33.3% of 3</td><td class="num">1.789</td>
+        <td class="wrap-text">OOS win_rate 0.36 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">momentum(atr_mult=3,lookback=60)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+11.86%</td><td class="num">7.00%</td><td class="num">47.5%</td><td class="num">5.93</td><td class="num">61</td>
+        <td class="num">+17.53%</td><td class="num">4.99%</td><td class="num">39.0%</td><td class="num">2.33</td><td class="num">41</td>
+        <td class="num">66.7% of 3</td><td class="num">1.695</td>
+        <td class="wrap-text">OOS win_rate 0.39 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=20,slow=200)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+8.59%</td><td class="num">5.60%</td><td class="num">46.8%</td><td class="num">4.44</td><td class="num">47</td>
+        <td class="num">-0.57%</td><td class="num">8.25%</td><td class="num">32.4%</td><td class="num">0.96</td><td class="num">34</td>
+        <td class="num">0.0% of 3</td><td class="num">1.532</td>
+        <td class="wrap-text">OOS win_rate 0.32 &lt; 0.40; OOS profit_factor 0.96 &lt; 1.20; OOS total_return -0.57% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=20,exit_n=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+15.77%</td><td class="num">10.81%</td><td class="num">59.5%</td><td class="num">7.20</td><td class="num">37</td>
+        <td class="num">+27.06%</td><td class="num">5.67%</td><td class="num">37.5%</td><td class="num">2.47</td><td class="num">32</td>
+        <td class="num">33.3% of 3</td><td class="num">1.459</td>
+        <td class="wrap-text">OOS win_rate 0.38 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">breakout(atr_mult=2,entry_n=20,exit_n=20)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+24.20%</td><td class="num">16.62%</td><td class="num">62.5%</td><td class="num">17.87</td><td class="num">24</td>
+        <td class="num">+18.94%</td><td class="num">8.12%</td><td class="num">34.5%</td><td class="num">1.96</td><td class="num">29</td>
+        <td class="num">33.3% of 3</td><td class="num">1.456</td>
+        <td class="wrap-text">IS max_drawdown 16.6% &gt; 15.0%; OOS win_rate 0.34 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=20,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+9.68%</td><td class="num">7.25%</td><td class="num">42.9%</td><td class="num">7.49</td><td class="num">42</td>
+        <td class="num">+3.99%</td><td class="num">4.69%</td><td class="num">26.7%</td><td class="num">1.39</td><td class="num">30</td>
+        <td class="num">0.0% of 3</td><td class="num">1.334</td>
+        <td class="wrap-text">OOS win_rate 0.27 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=50,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+7.36%</td><td class="num">5.56%</td><td class="num">40.0%</td><td class="num">7.14</td><td class="num">35</td>
+        <td class="num">+2.28%</td><td class="num">7.00%</td><td class="num">18.5%</td><td class="num">1.20</td><td class="num">27</td>
+        <td class="num">0.0% of 3</td><td class="num">1.324</td>
+        <td class="wrap-text">OOS win_rate 0.19 &lt; 0.40; OOS profit_factor 1.199 &lt; 1.200</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">breakout(atr_mult=3,entry_n=20,exit_n=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+12.47%</td><td class="num">10.37%</td><td class="num">62.9%</td><td class="num">8.76</td><td class="num">35</td>
+        <td class="num">+17.83%</td><td class="num">4.44%</td><td class="num">38.7%</td><td class="num">2.45</td><td class="num">31</td>
+        <td class="num">33.3% of 3</td><td class="num">1.202</td>
+        <td class="wrap-text">OOS win_rate 0.39 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=20,slow=200)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+7.59%</td><td class="num">6.39%</td><td class="num">48.7%</td><td class="num">5.59</td><td class="num">39</td>
+        <td class="num">+2.63%</td><td class="num">4.90%</td><td class="num">37.5%</td><td class="num">1.35</td><td class="num">24</td>
+        <td class="num">0.0% of 3</td><td class="num">1.189</td>
+        <td class="wrap-text">OOS win_rate 0.38 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=50,slow=100)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+9.01%</td><td class="num">7.89%</td><td class="num">39.4%</td><td class="num">11.60</td><td class="num">33</td>
+        <td class="num">+3.04%</td><td class="num">4.77%</td><td class="num">24.0%</td><td class="num">1.41</td><td class="num">25</td>
+        <td class="num">0.0% of 3</td><td class="num">1.142</td>
+        <td class="wrap-text">IS win_rate 0.39 &lt; 0.40; OOS win_rate 0.24 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=3,fast=50,slow=200)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+4.68%</td><td class="num">5.82%</td><td class="num">40.0%</td><td class="num">3.75</td><td class="num">30</td>
+        <td class="num">+2.25%</td><td class="num">7.40%</td><td class="num">34.6%</td><td class="num">1.22</td><td class="num">26</td>
+        <td class="num">0.0% of 3</td><td class="num">0.804</td>
+        <td class="wrap-text">OOS win_rate 0.35 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">trend(atr_mult=4,fast=50,slow=200)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">+6.29%</td><td class="num">8.45%</td><td class="num">40.7%</td><td class="num">6.46</td><td class="num">27</td>
+        <td class="num">+3.04%</td><td class="num">4.85%</td><td class="num">36.4%</td><td class="num">1.51</td><td class="num">22</td>
+        <td class="num">0.0% of 3</td><td class="num">0.744</td>
+        <td class="wrap-text">OOS win_rate 0.36 &lt; 0.40</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=5,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.17%</td><td class="num">3.82%</td><td class="num">61.8%</td><td class="num">0.88</td><td class="num">34</td>
+        <td class="num">+2.23%</td><td class="num">2.07%</td><td class="num">68.2%</td><td class="num">1.46</td><td class="num">22</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.044</td>
+        <td class="wrap-text">IS profit_factor 0.88 &lt; 1.20; IS total_return -1.03% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=5,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.17%</td><td class="num">3.82%</td><td class="num">61.8%</td><td class="num">0.88</td><td class="num">34</td>
+        <td class="num">+2.76%</td><td class="num">2.11%</td><td class="num">68.2%</td><td class="num">1.64</td><td class="num">22</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.044</td>
+        <td class="wrap-text">IS profit_factor 0.88 &lt; 1.20; IS total_return -1.03% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=5,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.08%</td><td class="num">1.76%</td><td class="num">64.7%</td><td class="num">0.91</td><td class="num">34</td>
+        <td class="num">+0.05%</td><td class="num">1.63%</td><td class="num">66.7%</td><td class="num">1.01</td><td class="num">21</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.047</td>
+        <td class="wrap-text">IS profit_factor 0.91 &lt; 1.20; IS total_return -0.51% is not positive; OOS profit_factor 1.01 &lt; 1.20</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=10,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.36%</td><td class="num">5.16%</td><td class="num">62.3%</td><td class="num">0.88</td><td class="num">69</td>
+        <td class="num">+3.71%</td><td class="num">2.68%</td><td class="num">68.9%</td><td class="num">1.50</td><td class="num">45</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.069</td>
+        <td class="wrap-text">IS profit_factor 0.87 &lt; 1.20; IS total_return -2.19% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=5,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.17%</td><td class="num">2.31%</td><td class="num">63.6%</td><td class="num">0.82</td><td class="num">33</td>
+        <td class="num">+0.54%</td><td class="num">1.51%</td><td class="num">66.7%</td><td class="num">1.17</td><td class="num">21</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.075</td>
+        <td class="wrap-text">IS profit_factor 0.82 &lt; 1.20; IS total_return -1.07% is not positive; OOS profit_factor 1.17 &lt; 1.20</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=2,entry_rsi=10,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.44%</td><td class="num">4.93%</td><td class="num">59.4%</td><td class="num">0.85</td><td class="num">69</td>
+        <td class="num">+4.07%</td><td class="num">2.33%</td><td class="num">68.9%</td><td class="num">1.56</td><td class="num">45</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.089</td>
+        <td class="wrap-text">IS profit_factor 0.85 &lt; 1.20; IS total_return -2.69% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=10,max_hold=5)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.31%</td><td class="num">3.31%</td><td class="num">61.8%</td><td class="num">0.85</td><td class="num">68</td>
+        <td class="num">+1.61%</td><td class="num">2.27%</td><td class="num">68.2%</td><td class="num">1.28</td><td class="num">44</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.093</td>
+        <td class="wrap-text">IS profit_factor 0.85 &lt; 1.20; IS total_return -1.89% is not positive</td>
+      </tr>
+      <tr class="">
+        <td class="num"></td>
+        <th scope="row" class="nowrap">meanrev(atr_mult=3,entry_rsi=10,max_hold=10)</th>
+        <td><span class="tag bad">&#10007; failed</span></td>
+        <td class="num">-0.53%</td><td class="num">4.20%</td><td class="num">64.2%</td><td class="num">0.75</td><td class="num">67</td>
+        <td class="num">-0.13%</td><td class="num">2.75%</td><td class="num">67.4%</td><td class="num">0.98</td><td class="num">43</td>
+        <td class="num">0.0% of 3</td><td class="num">-0.127</td>
+        <td class="wrap-text">IS profit_factor 0.75 &lt; 1.20; IS total_return -3.26% is not positive; OOS profit_factor 0.98 &lt; 1.20; OOS total_return -0.13% is not positive</td>
+      </tr>
+    </tbody>
+  </table>
+</div></section>
+
+<section aria-labelledby="bt-regimes-h">
+  <h2 id="bt-regimes-h">Regimes and stress windows</h2>
+  <h3>SPY winner</h3>
+  <div class="table-wrap" role="region" aria-label="Regime results for SPY winner" tabindex="0"><table>
+  <caption>By market regime: SPY winner</caption>
+  <thead><tr><th scope="col">Regime</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th><th scope="col" class="num">Bars</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Trend: bull</th><td class="num">+23.86%</td><td class="num">3.12%</td><td class="num">33</td><td class="num">2,192</td></tr>
+    <tr><th scope="row">Trend: bear</th><td class="num">+2.22%</td><td class="num">2.29%</td><td class="num">7</td><td class="num">318</td></tr>
+    <tr><th scope="row">Trend: sideways</th><td class="num">+1.20%</td><td class="num">1.60%</td><td class="num">1</td><td class="num">244</td></tr>
+    <tr><th scope="row">Volatility: high</th><td class="num">+4.43%</td><td class="num">3.39%</td><td class="num">29</td><td class="num">1,276</td></tr>
+    <tr><th scope="row">Volatility: low</th><td class="num">+22.69%</td><td class="num">2.77%</td><td class="num">12</td><td class="num">1,478</td></tr>
+  </tbody>
+</table>
+</div><div class="table-wrap" role="region" aria-label="Stress windows for SPY winner" tabindex="0"><table>
+  <caption>Stress windows: SPY winner</caption>
+  <thead><tr><th scope="col">Window</th><th scope="col">Dates</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">crypto winter 2018</th><td>2018-01-06 to 2018-12-15</td>
+<td class="num">+0.46%</td><td class="num">2.44%</td><td class="num">2</td></tr>
+    <tr><th scope="row">q4 2018 equity selloff</th><td>2018-09-20 to 2018-12-24</td>
+<td class="num">-0.51%</td><td class="num">0.78%</td><td class="num">0</td></tr>
+    <tr><th scope="row">covid crash 2020</th><td>2020-02-19 to 2020-03-23</td>
+<td class="num">-1.64%</td><td class="num">1.80%</td><td class="num">0</td></tr>
+    <tr><th scope="row">bear market 2022</th><td>2022-01-03 to 2022-10-12</td>
+<td class="num">-0.90%</td><td class="num">1.75%</td><td class="num">2</td></tr>
+    <tr><th scope="row">crypto crash 2021 2022</th><td>2021-11-10 to 2022-11-21</td>
+<td class="num">-1.16%</td><td class="num">2.69%</td><td class="num">4</td></tr>
+    <tr><th scope="row">tariff shock 2025</th><td>2025-02-19 to 2025-04-08</td>
+<td class="num">-0.52%</td><td class="num">0.64%</td><td class="num">1</td></tr>
+  </tbody>
+</table>
+</div>
+  <h3>QQQ winner</h3>
+  <div class="table-wrap" role="region" aria-label="Regime results for QQQ winner" tabindex="0"><table>
+  <caption>By market regime: QQQ winner</caption>
+  <thead><tr><th scope="col">Regime</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th><th scope="col" class="num">Bars</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Trend: bull</th><td class="num">+33.03%</td><td class="num">3.39%</td><td class="num">67</td><td class="num">2,200</td></tr>
+    <tr><th scope="row">Trend: bear</th><td class="num">+0.01%</td><td class="num">0.24%</td><td class="num">3</td><td class="num">282</td></tr>
+    <tr><th scope="row">Trend: sideways</th><td class="num">+0.31%</td><td class="num">1.11%</td><td class="num">5</td><td class="num">272</td></tr>
+    <tr><th scope="row">Volatility: high</th><td class="num">+3.80%</td><td class="num">3.80%</td><td class="num">47</td><td class="num">1,384</td></tr>
+    <tr><th scope="row">Volatility: low</th><td class="num">+28.58%</td><td class="num">2.70%</td><td class="num">28</td><td class="num">1,370</td></tr>
+  </tbody>
+</table>
+</div><div class="table-wrap" role="region" aria-label="Stress windows for QQQ winner" tabindex="0"><table>
+  <caption>Stress windows: QQQ winner</caption>
+  <thead><tr><th scope="col">Window</th><th scope="col">Dates</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">crypto winter 2018</th><td>2018-01-06 to 2018-12-15</td>
+<td class="num">+1.55%</td><td class="num">1.94%</td><td class="num">5</td></tr>
+    <tr><th scope="row">q4 2018 equity selloff</th><td>2018-09-20 to 2018-12-24</td>
+<td class="num">-0.35%</td><td class="num">0.98%</td><td class="num">0</td></tr>
+    <tr><th scope="row">covid crash 2020</th><td>2020-02-19 to 2020-03-23</td>
+<td class="num">-1.78%</td><td class="num">2.08%</td><td class="num">0</td></tr>
+    <tr><th scope="row">bear market 2022</th><td>2022-01-03 to 2022-10-12</td>
+<td class="num">-1.48%</td><td class="num">1.66%</td><td class="num">1</td></tr>
+    <tr><th scope="row">crypto crash 2021 2022</th><td>2021-11-10 to 2022-11-21</td>
+<td class="num">-3.58%</td><td class="num">4.11%</td><td class="num">4</td></tr>
+    <tr><th scope="row">tariff shock 2025</th><td>2025-02-19 to 2025-04-08</td>
+<td class="num">-0.87%</td><td class="num">0.87%</td><td class="num">0</td></tr>
+  </tbody>
+</table>
+</div>
+  <h3>BTC/USD winner</h3>
+  <div class="table-wrap" role="region" aria-label="Regime results for BTC/USD winner" tabindex="0"><table>
+  <caption>By market regime: BTC/USD winner</caption>
+  <thead><tr><th scope="col">Regime</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th><th scope="col" class="num">Bars</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Trend: bull</th><td class="num">+83.80%</td><td class="num">5.18%</td><td class="num">75</td><td class="num">2,317</td></tr>
+    <tr><th scope="row">Trend: bear</th><td class="num">-3.84%</td><td class="num">3.84%</td><td class="num">12</td><td class="num">1,007</td></tr>
+    <tr><th scope="row">Trend: sideways</th><td class="num">+14.18%</td><td class="num">2.59%</td><td class="num">12</td><td class="num">679</td></tr>
+    <tr><th scope="row">Volatility: high</th><td class="num">+52.09%</td><td class="num">4.46%</td><td class="num">49</td><td class="num">1,910</td></tr>
+    <tr><th scope="row">Volatility: low</th><td class="num">+32.69%</td><td class="num">4.19%</td><td class="num">50</td><td class="num">2,093</td></tr>
+  </tbody>
+</table>
+</div><div class="table-wrap" role="region" aria-label="Stress windows for BTC/USD winner" tabindex="0"><table>
+  <caption>Stress windows: BTC/USD winner</caption>
+  <thead><tr><th scope="col">Window</th><th scope="col">Dates</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">crypto winter 2018</th><td>2018-01-06 to 2018-12-15</td>
+<td class="num">-3.70%</td><td class="num">3.71%</td><td class="num">5</td></tr>
+    <tr><th scope="row">q4 2018 equity selloff</th><td>2018-09-20 to 2018-12-24</td>
+<td class="num">-0.71%</td><td class="num">0.71%</td><td class="num">1</td></tr>
+    <tr><th scope="row">covid crash 2020</th><td>2020-02-19 to 2020-03-23</td>
+<td class="num">-0.85%</td><td class="num">0.85%</td><td class="num">0</td></tr>
+    <tr><th scope="row">bear market 2022</th><td>2022-01-03 to 2022-10-12</td>
+<td class="num">+0.00%</td><td class="num">0.00%</td><td class="num">0</td></tr>
+    <tr><th scope="row">crypto crash 2021 2022</th><td>2021-11-10 to 2022-11-21</td>
+<td class="num">-2.38%</td><td class="num">2.38%</td><td class="num">2</td></tr>
+    <tr><th scope="row">tariff shock 2025</th><td>2025-02-19 to 2025-04-08</td>
+<td class="num">+0.00%</td><td class="num">0.00%</td><td class="num">0</td></tr>
+  </tbody>
+</table>
+</div>
+  <h3>Portfolio, out-of-sample</h3>
+<p class="muted">Trend and volatility regimes are labelled from SPY.</p>  <div class="table-wrap" role="region" aria-label="Regime results for portfolio, out-of-sample" tabindex="0"><table>
+  <caption>By market regime: portfolio, out-of-sample</caption>
+  <thead><tr><th scope="col">Regime</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th><th scope="col" class="num">Bars</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Trend: bull</th><td class="num">+27.22%</td><td class="num">6.18%</td><td class="num">63</td><td class="num">861</td></tr>
+    <tr><th scope="row">Trend: bear</th><td class="num">+0.20%</td><td class="num">2.87%</td><td class="num">7</td><td class="num">180</td></tr>
+    <tr><th scope="row">Trend: sideways</th><td class="num">+3.20%</td><td class="num">2.59%</td><td class="num">1</td><td class="num">147</td></tr>
+    <tr><th scope="row">Volatility: high</th><td class="num">+2.30%</td><td class="num">5.47%</td><td class="num">37</td><td class="num">593</td></tr>
+    <tr><th scope="row">Volatility: low</th><td class="num">+28.58%</td><td class="num">4.24%</td><td class="num">34</td><td class="num">595</td></tr>
+  </tbody>
+</table>
+</div><div class="table-wrap" role="region" aria-label="Stress windows for portfolio, out-of-sample" tabindex="0"><table>
+  <caption>Stress windows: portfolio, out-of-sample</caption>
+  <thead><tr><th scope="col">Window</th><th scope="col">Dates</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th></tr></thead>
+  <tbody>
+    <tr class="dim"><th scope="row">crypto winter 2018</th><td>2018-01-06 to 2018-12-15</td>
+<td colspan="3">No data in this window</td></tr>
+    <tr class="dim"><th scope="row">q4 2018 equity selloff</th><td>2018-09-20 to 2018-12-24</td>
+<td colspan="3">No data in this window</td></tr>
+    <tr class="dim"><th scope="row">covid crash 2020</th><td>2020-02-19 to 2020-03-23</td>
+<td colspan="3">No data in this window</td></tr>
+    <tr><th scope="row">bear market 2022</th><td>2022-01-03 to 2022-10-12</td>
+<td class="num">-1.91%</td><td class="num">2.58%</td><td class="num">4</td></tr>
+    <tr><th scope="row">crypto crash 2021 2022</th><td>2021-11-10 to 2022-11-21</td>
+<td class="num">-1.64%</td><td class="num">2.95%</td><td class="num">6</td></tr>
+    <tr><th scope="row">tariff shock 2025</th><td>2025-02-19 to 2025-04-08</td>
+<td class="num">-1.40%</td><td class="num">1.52%</td><td class="num">1</td></tr>
+  </tbody>
+</table>
+</div>
+  <h3>Portfolio, full period</h3>
+<p class="muted">Trend and volatility regimes are labelled from SPY.</p>  <div class="table-wrap" role="region" aria-label="Regime results for portfolio, full period" tabindex="0"><table>
+  <caption>By market regime: portfolio, full period</caption>
+  <thead><tr><th scope="col">Regime</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th><th scope="col" class="num">Bars</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">Trend: bull</th><td class="num">+158.33%</td><td class="num">5.77%</td><td class="num">163</td><td class="num">2,192</td></tr>
+    <tr><th scope="row">Trend: bear</th><td class="num">+4.59%</td><td class="num">2.02%</td><td class="num">19</td><td class="num">318</td></tr>
+    <tr><th scope="row">Trend: sideways</th><td class="num">+9.52%</td><td class="num">2.18%</td><td class="num">4</td><td class="num">244</td></tr>
+    <tr><th scope="row">Volatility: high</th><td class="num">+33.09%</td><td class="num">5.68%</td><td class="num">100</td><td class="num">1,276</td></tr>
+    <tr><th scope="row">Volatility: low</th><td class="num">+122.34%</td><td class="num">5.30%</td><td class="num">86</td><td class="num">1,478</td></tr>
+  </tbody>
+</table>
+</div><div class="table-wrap" role="region" aria-label="Stress windows for portfolio, full period" tabindex="0"><table>
+  <caption>Stress windows: portfolio, full period</caption>
+  <thead><tr><th scope="col">Window</th><th scope="col">Dates</th><th scope="col" class="num">Return</th><th scope="col" class="num">Max drawdown</th><th scope="col" class="num">Trades</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">crypto winter 2018</th><td>2018-01-06 to 2018-12-15</td>
+<td class="num">-2.32%</td><td class="num">3.69%</td><td class="num">12</td></tr>
+    <tr><th scope="row">q4 2018 equity selloff</th><td>2018-09-20 to 2018-12-24</td>
+<td class="num">-1.22%</td><td class="num">1.76%</td><td class="num">1</td></tr>
+    <tr><th scope="row">covid crash 2020</th><td>2020-02-19 to 2020-03-23</td>
+<td class="num">-2.82%</td><td class="num">2.82%</td><td class="num">0</td></tr>
+    <tr><th scope="row">bear market 2022</th><td>2022-01-03 to 2022-10-12</td>
+<td class="num">-1.71%</td><td class="num">2.32%</td><td class="num">3</td></tr>
+    <tr><th scope="row">crypto crash 2021 2022</th><td>2021-11-10 to 2022-11-21</td>
+<td class="num">-5.40%</td><td class="num">6.24%</td><td class="num">10</td></tr>
+    <tr><th scope="row">tariff shock 2025</th><td>2025-02-19 to 2025-04-08</td>
+<td class="num">-0.74%</td><td class="num">0.79%</td><td class="num">1</td></tr>
+  </tbody>
+</table>
+</div>
+</section>
+
+<section aria-labelledby="bt-portfolio-h">
+  <h2 id="bt-portfolio-h">Portfolio</h2>
+  <h3>Portfolio, out-of-sample</h3>
+  <p>All winners on shared capital with the total exposure cap, over the <strong>out-of-sample</strong> window (2022-01-01 to 2026-09-29).</p>
+  <figure class="chart-box">
+    <svg class="chart" viewBox="0 0 440 250" role="img" aria-labelledby="portfolio-title portfolio-desc" preserveAspectRatio="xMidYMid meet"><title id="portfolio-title">Portfolio, out-of-sample equity</title><desc id="portfolio-desc">Weekly equity of the combined backtest of every winner on shared capital.</desc><g class="grid"><line x1="64.5" x2="426" y1="206" y2="206"/><line x1="64.5" x2="426" y1="170.8" y2="170.8"/><line x1="64.5" x2="426" y1="135.6" y2="135.6"/><line x1="64.5" x2="426" y1="100.4" y2="100.4"/><line x1="64.5" x2="426" y1="65.2" y2="65.2"/><line x1="64.5" x2="426" y1="30" y2="30"/></g><line class="baseline" x1="64.5" x2="426" y1="206" y2="206"/><g class="axis"><text x="58.5" y="210" text-anchor="end">$9,000</text><text x="58.5" y="174.8" text-anchor="end">$10,000</text><text x="58.5" y="139.6" text-anchor="end">$11,000</text><text x="58.5" y="104.4" text-anchor="end">$12,000</text><text x="58.5" y="69.2" text-anchor="end">$13,000</text><text x="58.5" y="34" text-anchor="end">$14,000</text><text x="64.5" y="222" text-anchor="start">2022-01</text><text x="185" y="222" text-anchor="middle">2023-08</text><text x="305.5" y="222" text-anchor="middle">2025-03</text><text x="426" y="222" text-anchor="end">2026-09</text><text class="label" x="64.5" y="22">Equity (USD)</text><text class="label" x="245.2" y="244" text-anchor="middle">Date</text></g><path class="line s1" d="M64.5,170.8 L66,174.5 L67.4,174.5 L68.9,174.5 L70.3,174.5 L71.8,174.5 L73.3,174.5 L74.7,174.5 L76.2,174.5 L77.7,174.5 L79.1,174.5 L80.6,174.5 L82,173.4 L83.5,173.3 L85,176.3 L86.4,178.9 L87.9,179.1 L89.4,179.1 L90.8,179.1 L92.3,179.1 L93.7,179.1 L95.2,179.1 L96.7,179.1 L98.1,179.1 L99.6,179.1 L101,179.1 L102.5,179.1 L104,179.1 L105.4,179.1 L106.9,179 L108.4,175.4 L109.8,175.1 L111.3,172.1 L112.7,173.2 L114.2,176.8 L115.7,177.5 L117.1,177.5 L118.6,177.5 L120.1,177.5 L121.5,177.5 L123,177.5 L124.4,177.5 L125.9,177.5 L127.4,176.5 L128.8,180.1 L130.3,175.8 L131.7,176.3 L133.2,175 L134.7,174.2 L136.1,176.8 L137.6,177.5 L139.1,177.5 L140.5,177.5 L142,177.5 L143.4,174.8 L144.9,169.4 L146.4,164.5 L147.8,165.1 L149.3,169.3 L150.8,164.8 L152.2,169.2 L153.7,171.2 L155.1,171.2 L156.6,166.5 L158.1,166.5 L159.5,166.3 L161,166 L162.4,162.6 L163.9,166.2 L165.4,162.5 L166.8,167 L168.3,168.7 L169.8,166.4 L171.2,165.9 L172.7,164.3 L174.1,164 L175.6,157.6 L177.1,157.6 L178.5,152.9 L180,155.6 L181.4,149.3 L182.9,149.6 L184.4,147.5 L185.8,153.6 L187.3,153.8 L188.8,155.6 L190.2,154.3 L191.7,151.3 L193.1,152.4 L194.6,152.8 L196.1,155.5 L197.5,155.7 L199,155.1 L200.5,157.6 L201.9,157 L203.4,155.6 L204.8,155 L206.3,150.5 L207.8,145.4 L209.2,143.3 L210.7,139.1 L212.1,133.6 L213.6,132.2 L215.1,128.6 L216.5,128.6 L218,131.2 L219.5,127.2 L220.9,122.2 L222.4,120.1 L223.8,117.2 L225.3,107.9 L226.8,106.8 L228.2,108.1 L229.7,94.4 L231.2,98.1 L232.6,99.4 L234.1,93.1 L235.5,93.2 L237,95.3 L238.5,102.3 L239.9,104.9 L241.4,104.9 L242.8,104.9 L244.3,105.2 L245.8,101.6 L247.2,99 L248.7,103.1 L250.2,98.1 L251.6,93.9 L253.1,95.3 L254.5,96.9 L256,90.2 L257.5,89.3 L258.9,94.6 L260.4,100.5 L261.9,100.5 L263.3,100.5 L264.8,100.5 L266.2,100 L267.7,100.5 L269.2,105.1 L270.6,104.7 L272.1,103.6 L273.5,102.2 L275,101.8 L276.5,99.4 L277.9,97.1 L279.4,98.8 L280.9,101.2 L282.3,83.7 L283.8,83.2 L285.2,74 L286.7,72.1 L288.2,64.9 L289.6,62.8 L291.1,75.4 L292.6,75 L294,76.5 L295.5,82 L296.9,79.3 L298.4,76.8 L299.9,81.4 L301.3,84.9 L302.8,82.1 L304.2,86.4 L305.7,88.1 L307.2,88.1 L308.6,88.1 L310.1,88.1 L311.6,88.1 L313,88.1 L314.5,88.1 L315.9,88.1 L317.4,88.7 L318.9,88.4 L320.3,84.6 L321.8,77 L323.3,79.1 L324.7,79.3 L326.2,76.7 L327.6,77.5 L329.1,79.6 L330.6,72.9 L332,70 L333.5,66 L334.9,65.4 L336.4,62.4 L337.9,70 L339.3,63.5 L340.8,63 L342.3,68 L343.7,71.3 L345.2,69.7 L346.6,66.2 L348.1,62.2 L349.6,65.9 L351,57.5 L352.5,66.7 L354,65.9 L355.4,59.1 L356.9,58.5 L358.3,63.8 L359.8,65.4 L361.3,69.3 L362.7,68.5 L364.2,67.7 L365.6,70.1 L367.1,69.5 L368.6,66.9 L370,69.5 L371.5,65.9 L373,66.9 L374.4,67.2 L375.9,66.8 L377.3,71.1 L378.8,71.1 L380.3,71.1 L381.7,72.5 L383.2,73.6 L384.6,74.5 L386.1,75.6 L387.6,75.6 L389,75.6 L390.5,75.4 L392,65 L393.4,62.4 L394.9,59.9 L396.3,52.2 L397.8,52.2 L399.3,49.9 L400.7,45.3 L402.2,51.6 L403.7,52.7 L405.1,52.7 L406.6,52.7 L408,52.7 L409.5,52.7 L411,54.3 L412.4,55.5 L413.9,55.5 L415.3,53.2 L416.8,51.9 L418.3,56.7 L419.7,56.9 L421.2,56.7 L422.7,59.2 L424.1,62.3 L425.6,56.7 L426,59.8" vector-effect="non-scaling-stroke"/><circle class="dot s1" cx="426" cy="59.8" r="4"><title>Portfolio, out-of-sample: $13,154 at 2026-09</title></circle></svg>
+    <figcaption>Portfolio, out-of-sample equity, weekly closes.</figcaption>
+  </figure>
+<div class="table-wrap" role="region" aria-label="Portfolio, out-of-sample metrics" tabindex="0">  <table class="metrics">
+    <caption>Portfolio, out-of-sample: metrics</caption>
+    <tbody><tr><th scope="row">Total return</th><td class="num">+31.54%</td></tr><tr><th scope="row">CAGR</th><td class="num">+5.95%</td></tr><tr><th scope="row">Max drawdown</th><td class="num">6.38%</td></tr><tr><th scope="row">Win rate</th><td class="num">43.4%</td></tr><tr><th scope="row">Trades</th><td class="num">83</td></tr><tr><th scope="row">Average win</th><td class="num">+8.36%</td></tr><tr><th scope="row">Average loss</th><td class="num">-3.07%</td></tr><tr><th scope="row">Expectancy per trade</th><td class="num">+1.89%</td></tr><tr><th scope="row">Sharpe</th><td class="num">0.98</td></tr><tr><th scope="row">Sortino</th><td class="num">1.43</td></tr><tr><th scope="row">Time in the market</th><td class="num">71.09%</td></tr><tr><th scope="row">Largest loss</th><td class="num">-$137.58</td></tr><tr><th scope="row">Largest loss (per trade)</th><td class="num">-13.53%</td></tr><tr><th scope="row">Longest drawdown (days)</th><td class="num">382</td></tr><tr><th scope="row">Buy and hold return</th><td class="num">n/a</td></tr><tr><th scope="row">Buy and hold max drawdown</th><td class="num">n/a</td></tr><tr><th scope="row">Profit factor (∞: no losing trades)</th><td class="num">2.20</td></tr></tbody>
+  </table>
+</div>  <dl class="kv">
+<dt>Trades by symbol</dt><dd>SPY 19, QQQ 27, BTC/USD 37</dd><dt>Approvals</dt><dd>77 of 83 entry orders (92.8%) would have waited for Telegram approval</dd>    <dt>Entries shrunk by the exposure cap</dt><dd>0</dd>
+    <dt>Entries blocked</dt><dd>0</dd>
+    <dt>Daily loss limit hits</dt><dd><strong>3</strong> (2024-03-05, 2024-12-18, 2025-10-10)</dd>
+  </dl>
+  <h4>Would the kill switch have fired?</h4>
+<p><span class="tag ok">&#10003; no</span> The kill switch would not have fired in this window.</p>  <h3>Portfolio, full period</h3>
+  <p>All winners on shared capital with the total exposure cap, over the <strong>full</strong> window (2015-10-14 to 2026-09-29).</p>
+  <figure class="chart-box">
+    <svg class="chart" viewBox="0 0 440 250" role="img" aria-labelledby="portfolio-full-title portfolio-full-desc" preserveAspectRatio="xMidYMid meet"><title id="portfolio-full-title">Portfolio, full period equity</title><desc id="portfolio-full-desc">Weekly equity of the combined backtest of every winner on shared capital.</desc><g class="grid"><line x1="64.5" x2="426" y1="206" y2="206"/><line x1="64.5" x2="426" y1="147.3" y2="147.3"/><line x1="64.5" x2="426" y1="88.7" y2="88.7"/><line x1="64.5" x2="426" y1="30" y2="30"/></g><line class="baseline" x1="64.5" x2="426" y1="206" y2="206"/><g class="axis"><text x="58.5" y="210" text-anchor="end">$10,000</text><text x="58.5" y="151.3" text-anchor="end">$20,000</text><text x="58.5" y="92.7" text-anchor="end">$30,000</text><text x="58.5" y="34" text-anchor="end">$40,000</text><text x="64.5" y="222" text-anchor="start">2015-10</text><text x="185" y="222" text-anchor="middle">2019-06</text><text x="305.5" y="222" text-anchor="middle">2023-02</text><text x="426" y="222" text-anchor="end">2026-09</text><text class="label" x="64.5" y="22">Equity (USD)</text><text class="label" x="245.2" y="244" text-anchor="middle">Date</text></g><path class="line s1" d="M64.5,205.4 L65.1,203.4 L65.8,201.4 L66.4,199.6 L67,200.8 L67.7,199.7 L68.3,199.2 L68.9,198.9 L69.6,199.6 L70.2,199.9 L70.8,199.9 L71.5,199.9 L72.1,200 L72.7,200.4 L73.4,200.4 L74,200.4 L74.6,200.4 L75.3,200.4 L75.9,199.8 L76.5,199.8 L77.2,199.8 L77.8,199.4 L78.4,199 L79.1,198.9 L79.7,198.3 L80.3,198.7 L81,198.2 L81.6,198.2 L82.2,199 L82.9,198.9 L83.5,199 L84.1,199.7 L84.7,196.7 L85.4,195.2 L86,192.1 L86.6,189.7 L87.3,192.5 L87.9,192.4 L88.5,192.3 L89.2,191.6 L89.8,191.4 L90.4,191.3 L91.1,190.9 L91.7,190.8 L92.3,190.8 L93,191 L93.6,190.9 L94.2,191.5 L94.9,191.1 L95.5,191.1 L96.1,190.7 L96.8,190.5 L97.4,190.9 L98,190.2 L98.7,188.9 L99.3,189.7 L99.9,190.3 L100.6,189.5 L101.2,188.9 L101.8,189 L102.5,187.8 L103.1,187.4 L103.7,186.1 L104.4,185.4 L105,183.7 L105.6,183.5 L106.3,183.5 L106.9,182.8 L107.5,182.1 L108.2,181.9 L108.8,180.8 L109.4,179.7 L110.1,178.6 L110.7,179.2 L111.3,179.8 L112,180.3 L112.6,180.5 L113.2,180.2 L113.9,180.5 L114.5,180 L115.1,178.7 L115.8,177 L116.4,176.5 L117,175.9 L117.7,174.8 L118.3,173.6 L118.9,173.4 L119.6,174.4 L120.2,173.8 L120.8,174.7 L121.5,174.8 L122.1,175.1 L122.7,174.9 L123.3,175 L124,174.9 L124.6,174.5 L125.2,174.8 L125.9,174.2 L126.5,173.3 L127.1,174.4 L127.8,174.4 L128.4,174.6 L129,174.6 L129.7,173.6 L130.3,172 L130.9,171.4 L131.6,170.8 L132.2,168.8 L132.8,170.1 L133.5,168.7 L134.1,167.3 L134.7,166 L135.4,163.5 L136,162 L136.6,162.9 L137.3,163.5 L137.9,161.7 L138.5,161.5 L139.2,161.2 L139.8,160.1 L140.4,161.7 L141.1,162.1 L141.7,162.1 L142.3,162.1 L143,161.8 L143.6,162.6 L144.2,163.1 L144.9,163.6 L145.5,163.6 L146.1,163.6 L146.8,163.6 L147.4,163.6 L148,163.6 L148.7,163.6 L149.3,163.2 L149.9,163.5 L150.6,163.2 L151.2,162.8 L151.8,162.2 L152.5,162 L153.1,162.3 L153.7,163.3 L154.4,162.8 L155,162.1 L155.6,162.2 L156.3,163 L156.9,163.3 L157.5,163.4 L158.2,163.4 L158.8,162.9 L159.4,162.2 L160.1,163 L160.7,162.6 L161.3,162.4 L161.9,162.3 L162.6,163.1 L163.2,163.3 L163.8,163.3 L164.5,163.3 L165.1,163.3 L165.7,163.7 L166.4,163.9 L167,163.9 L167.6,163.9 L168.3,163.9 L168.9,163.9 L169.5,163.9 L170.2,163.9 L170.8,163.9 L171.4,163.9 L172.1,163.5 L172.7,163.6 L173.3,163.3 L174,163.6 L174.6,162.6 L175.2,162.4 L175.9,162.1 L176.5,163 L177.1,161.5 L177.8,161.6 L178.4,162 L179,160.2 L179.7,160 L180.3,159.5 L180.9,158.9 L181.6,157.4 L182.2,155.2 L182.8,154.6 L183.5,154.7 L184.1,154.9 L184.7,156.1 L185.4,154.9 L186,152.7 L186.6,152.6 L187.3,151.7 L187.9,151.3 L188.5,151.8 L189.2,151 L189.8,152.1 L190.4,152.3 L191.1,153.2 L191.7,154.1 L192.3,154 L193,153.8 L193.6,153.5 L194.2,154 L194.9,154.8 L195.5,155.5 L196.1,155.2 L196.8,155.2 L197.4,154.7 L198,154.2 L198.7,153.7 L199.3,153.3 L199.9,153.5 L200.5,152.9 L201.2,153.3 L201.8,152.9 L202.4,152.1 L203.1,151.7 L203.7,151.7 L204.3,151 L205,150.1 L205.6,150.5 L206.2,150.8 L206.9,148.1 L207.5,147.5 L208.1,148.2 L208.8,150.5 L209.4,150.5 L210,150.5 L210.7,150.5 L211.3,150.5 L211.9,150.5 L212.6,150.5 L213.2,150.2 L213.8,150 L214.5,148.6 L215.1,147.7 L215.7,147.1 L216.4,147.2 L217,146.7 L217.6,145.6 L218.3,146.6 L218.9,146.3 L219.5,147 L220.2,145.6 L220.8,144.8 L221.4,145.1 L222.1,144.2 L222.7,141.1 L223.3,139.3 L224,138.7 L224.6,138.3 L225.2,137.7 L225.9,139.2 L226.5,139.8 L227.1,140.2 L227.8,140.2 L228.4,140.4 L229,139 L229.7,138.7 L230.3,136.6 L230.9,137.5 L231.6,133 L232.2,132.3 L232.8,128.8 L233.5,129.6 L234.1,128.2 L234.7,128.8 L235.4,125.7 L236,124.3 L236.6,120.5 L237.2,116.9 L237.9,120.1 L238.5,118.7 L239.1,120.2 L239.8,118.8 L240.4,118.2 L241,117.4 L241.7,120.3 L242.3,120.3 L242.9,119.3 L243.6,120.1 L244.2,119.7 L244.8,118.6 L245.5,117.1 L246.1,117 L246.7,117.2 L247.4,117.5 L248,117.3 L248.6,120.3 L249.3,120.5 L249.9,120 L250.5,119.9 L251.2,119.6 L251.8,119.9 L252.4,119.4 L253.1,118.5 L253.7,118.3 L254.3,118.7 L255,117.6 L255.6,117.9 L256.2,117.5 L256.9,117.3 L257.5,117.5 L258.1,117.1 L258.8,116.6 L259.4,117.3 L260,117.6 L260.7,119.3 L261.3,120.1 L261.9,118.9 L262.6,117.6 L263.2,117.3 L263.8,116.3 L264.5,114.8 L265.1,114.7 L265.7,115.6 L266.4,117 L267,119 L267.6,118.7 L268.3,119.4 L268.9,119.8 L269.5,120.1 L270.2,121.3 L270.8,121.4 L271.4,121.4 L272.1,121.4 L272.7,121.4 L273.3,121.4 L274,121.4 L274.6,121.4 L275.2,121.4 L275.8,121.4 L276.5,121.4 L277.1,121.2 L277.7,121.1 L278.4,122.2 L279,122.9 L279.6,122.9 L280.3,122.9 L280.9,122.9 L281.5,122.9 L282.2,122.9 L282.8,122.9 L283.4,122.9 L284.1,122.9 L284.7,122.9 L285.3,122.9 L286,122.9 L286.6,122.9 L287.2,122.9 L287.9,122.9 L288.5,122 L289.1,121.9 L289.8,121.2 L290.4,121.5 L291,122.4 L291.7,122.5 L292.3,122.5 L292.9,122.5 L293.6,122.5 L294.2,122.5 L294.8,122.5 L295.5,122.5 L296.1,122.5 L296.7,122.3 L297.4,123.5 L298,122.3 L298.6,122.4 L299.3,122.1 L299.9,121.8 L300.5,122.6 L301.2,122.7 L301.8,122.7 L302.4,122.7 L303.1,122.7 L303.7,121.8 L304.3,119.9 L305,118.5 L305.6,119 L306.2,120.3 L306.9,118.4 L307.5,119.5 L308.1,120.3 L308.8,120.3 L309.4,118.4 L310,118.4 L310.7,118.3 L311.3,118.2 L311.9,117 L312.6,118.5 L313.2,117.3 L313.8,118.3 L314.4,119.1 L315.1,118.5 L315.7,118.1 L316.3,117.7 L317,117.7 L317.6,116.3 L318.2,115.7 L318.9,114.7 L319.5,115.4 L320.1,114 L320.8,114.2 L321.4,113.9 L322,115.3 L322.7,115.2 L323.3,115.7 L323.9,115.3 L324.6,114.6 L325.2,114.9 L325.8,115 L326.5,115.7 L327.1,115.8 L327.7,115.6 L328.4,116.4 L329,115.9 L329.6,115.3 L330.3,115.1 L330.9,113.5 L331.5,112.4 L332.2,111.9 L332.8,110.4 L333.4,108.3 L334.1,108.9 L334.7,107.8 L335.3,107.9 L336,108.2 L336.6,108 L337.2,107.2 L337.9,106.8 L338.5,106.4 L339.1,103.7 L339.8,102.8 L340.4,103.1 L341,98.5 L341.7,99.5 L342.3,99.8 L342.9,98.6 L343.6,98.7 L344.2,99.1 L344.8,101.2 L345.5,101.7 L346.1,101.7 L346.7,101.7 L347.4,101.8 L348,101.1 L348.6,100.4 L349.3,101.3 L349.9,100.2 L350.5,99.8 L351.2,100.6 L351.8,101.2 L352.4,100 L353,99.9 L353.7,100.8 L354.3,102.2 L354.9,102.2 L355.6,102.2 L356.2,102.2 L356.8,102.1 L357.5,102.4 L358.1,103.1 L358.7,103 L359.4,102.7 L360,102.4 L360.6,102.3 L361.3,101.8 L361.9,101.1 L362.5,101.6 L363.2,102 L363.8,96.9 L364.4,95.9 L365.1,93.1 L365.7,92.9 L366.3,91 L367,90.2 L367.6,93.9 L368.2,94 L368.9,94 L369.5,95.5 L370.1,94.9 L370.8,94.3 L371.4,95.6 L372,96.5 L372.7,95.9 L373.3,96.7 L373.9,97.1 L374.6,97.1 L375.2,97.1 L375.8,97.1 L376.5,97.1 L377.1,97.1 L377.7,97.1 L378.4,97.1 L379,97.3 L379.6,97.2 L380.3,95.8 L380.9,93.6 L381.5,94.1 L382.2,94.3 L382.8,93.5 L383.4,93.8 L384.1,94.6 L384.7,92.5 L385.3,91.6 L386,90 L386.6,89.9 L387.2,89 L387.9,91.5 L388.5,89.9 L389.1,89.9 L389.8,91.3 L390.4,92.4 L391,92.1 L391.6,91.5 L392.3,90.7 L392.9,91.8 L393.5,89.7 L394.2,91.9 L394.8,92.1 L395.4,90.4 L396.1,90.8 L396.7,91.8 L397.3,92.1 L398,93 L398.6,92.7 L399.2,92.5 L399.9,93.1 L400.5,92.9 L401.1,92.4 L401.8,93 L402.4,92.2 L403,92.4 L403.7,92.5 L404.3,92.4 L404.9,93.3 L405.6,93.3 L406.2,93.3 L406.8,93.6 L407.5,93.8 L408.1,94 L408.7,94.3 L409.4,94.3 L410,94.3 L410.6,94.2 L411.3,92 L411.9,91.3 L412.5,90.8 L413.2,89 L413.8,89.1 L414.4,88.6 L415.1,87.5 L415.7,88.9 L416.3,89.1 L417,89.1 L417.6,89.1 L418.2,89.1 L418.9,89.1 L419.5,89.3 L420.1,89.5 L420.8,89.5 L421.4,89.1 L422,88.8 L422.7,90.1 L423.3,90.3 L423.9,90.3 L424.6,90.7 L425.2,91.8 L425.8,90.4 L426,91.1" vector-effect="non-scaling-stroke"/><circle class="dot s1" cx="426" cy="91.1" r="4"><title>Portfolio, full period: $29,591 at 2026-09</title></circle></svg>
+    <figcaption>Portfolio, full period equity, weekly closes.</figcaption>
+  </figure>
+<div class="table-wrap" role="region" aria-label="Portfolio, full period metrics" tabindex="0">  <table class="metrics">
+    <caption>Portfolio, full period: metrics</caption>
+    <tbody><tr><th scope="row">Total return</th><td class="num">+195.91%</td></tr><tr><th scope="row">CAGR</th><td class="num">+10.41%</td></tr><tr><th scope="row">Max drawdown</th><td class="num">6.44%</td></tr><tr><th scope="row">Win rate</th><td class="num">48.4%</td></tr><tr><th scope="row">Trades</th><td class="num">215</td></tr><tr><th scope="row">Average win</th><td class="num">+13.18%</td></tr><tr><th scope="row">Average loss</th><td class="num">-3.63%</td></tr><tr><th scope="row">Expectancy per trade</th><td class="num">+4.50%</td></tr><tr><th scope="row">Sharpe</th><td class="num">1.66</td></tr><tr><th scope="row">Sortino</th><td class="num">2.67</td></tr><tr><th scope="row">Time in the market</th><td class="num">79.52%</td></tr><tr><th scope="row">Largest loss</th><td class="num">-$289.41</td></tr><tr><th scope="row">Largest loss (per trade)</th><td class="num">-17.80%</td></tr><tr><th scope="row">Longest drawdown (days)</th><td class="num">612</td></tr><tr><th scope="row">Buy and hold return</th><td class="num">n/a</td></tr><tr><th scope="row">Buy and hold max drawdown</th><td class="num">n/a</td></tr><tr><th scope="row">Profit factor (∞: no losing trades)</th><td class="num">3.06</td></tr></tbody>
+  </table>
+</div>  <dl class="kv">
+<dt>Trades by symbol</dt><dd>SPY 41, QQQ 75, BTC/USD 99</dd><dt>Approvals</dt><dd>202 of 215 entry orders (94.0%) would have waited for Telegram approval</dd>    <dt>Entries shrunk by the exposure cap</dt><dd>0</dd>
+    <dt>Entries blocked</dt><dd>0</dd>
+    <dt>Daily loss limit hits</dt><dd><strong>4</strong> (2015-11-06, 2016-06-21, 2019-05-17, 2020-11-26)</dd>
+  </dl>
+  <h4>Would the kill switch have fired?</h4>
+<p><span class="tag ok">&#10003; no</span> The kill switch would not have fired in this window.</p></section>
+
+<section aria-labelledby="bt-caveats-h">
+  <h2 id="bt-caveats-h">Caveats</h2>
+  <ul><li>90 configurations were tested. With that many tries some will look good by luck, so treat every survivor as a hypothesis, not a proven edge.</li><li>Survivors are ranked on the in-sample window only; the out-of-sample window is a pass/fail check.</li><li>The backtest cannot include Jev, news or manual approvals: live results will differ.</li><li>Fills assume the configured slippage and fees on daily bars; real fills can be worse, especially through gaps.</li><li>Daily bars on three assets give few trades per year, so win rates carry wide error bars.</li><li>Past results do not predict future returns. Not financial advice.</li></ul>
+</section></main>
+<footer class="wrap site-footer">
+  <p>Generated from results/tournament.json. Paper-trading research project, not financial advice.</p>
+</footer>
+</body>
+</html>
