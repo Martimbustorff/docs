@@ -244,6 +244,7 @@ def _run_symbol(
     for name, cls in REGISTRY.items():
         for grid_point in cls.param_grid:
             strategy = build(name, symbol, grid_point)
+            _require_warm(strategy, bars, windows)
             results = {w: run_backtest(bars, strategy, bt_cfg, *span) for w, span in windows.items()}
             metrics = {w: compute_metrics(r, ppy) for w, r in results.items()}
             reasons = fail_reasons(metrics["in_sample"], metrics["out_of_sample"], cfg.tournament.filters)
@@ -264,6 +265,21 @@ def _run_symbol(
             }
             out.append((run, full))
     return out
+
+
+def _require_warm(strategy: Strategy, bars: pd.DataFrame, windows: Mapping[str, tuple[str, str]]) -> None:
+    """Refuse a window that starts before the strategy can signal: its forced flat stretch would
+    still count in CAGR and bias the ranking against slow-indicator strategies."""
+    if strategy.warmup > len(bars):
+        raise ValueError(f"{strategy.label()} on {strategy.symbol}: only {len(bars)} bars for a warmup of {strategy.warmup}")
+    first_warm = bars.index[strategy.warmup - 1]
+    for name, (start, _end) in windows.items():
+        if first_warm > pd.Timestamp(start):
+            raise ValueError(
+                f"{strategy.label()} on {strategy.symbol} is not warm until {first_warm.date()}, after the "
+                f"{name} window starts ({start}). Move tournament.in_sample[0] in strategy.md to "
+                f"{first_warm.date()} or later, or fetch more history."
+            )
 
 
 def _portfolio_block(
@@ -480,8 +496,8 @@ def render_markdown(results: Mapping[str, Any]) -> str:
             for s, d in (results.get("data") or {}).items()
         ],
         f"- **Windows:** in-sample (IS) {_window_text(cfg['in_sample'])}, out-of-sample (OOS) "
-        f"{_window_text(cfg['out_of_sample'])}. Indicators warm up on the full history; trades happen "
-        "only inside each window, and each window starts flat.",
+        f"{_window_text(cfg['out_of_sample'])}. Every configuration's indicators are warm before the in-sample start (the tournament "
+        "refuses a window that isn't); trades happen only inside each window, and each window starts flat.",
         f"- **Configurations tested:** {results['n_configs']} ({len(REGISTRY)} strategies, each over its "
         f"parameter grid, on {len(symbols)} assets).",
         f"- **Filters, applied to both windows:** {_filters_text(cfg['filters'])}.",

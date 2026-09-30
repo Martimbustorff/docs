@@ -83,7 +83,9 @@ def run_backtest(bars: pd.DataFrame, strategy: Strategy, cfg: BacktestConfig,
                  start: str | None = None, end: str | None = None) -> BacktestResult
 ```
 The engine calls `strategy.prepare` on the **full** history once, then only trades bars in
-[start, end]. That way indicators are warm at `start` and never read the future. Sizing:
+[start, end]. That way indicators never read the future, and they are warm at `start` when at least
+`warmup` bars precede it. The tournament refuses a window that starts before every configuration is
+warm, because a forced flat stretch still counts in CAGR and would bias the ranking. Sizing:
 `qty = min(capital*risk_pct/(entry_est - stop), capital*max_position_pct/entry_est,
 max_position_usd/entry_est)`, where `entry_est` is the signal bar's close. Crypto quantities are
 fractional. Stock quantities are also fractional, because Alpaca supports that. The engine skips

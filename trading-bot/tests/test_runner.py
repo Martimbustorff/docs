@@ -35,7 +35,7 @@ from bot.runner import (
     load_queue,
     load_tracked,
 )
-from bot.store import Store, parse_ts
+from bot.store import Store, parse_ts, to_iso
 from bot.strategies import REGISTRY, build
 from bot.strategies.base import Strategy
 from bot.timeutil import NY, bar_close_ts
@@ -1257,3 +1257,20 @@ def test_ambiguous_entry_submit_is_adopted_with_its_stop(tmp_path, scripted):
     position = h.store.get_positions()["SPY"]
     assert position.qty == 20 and position.stop_price == 95.0
     assert h.store.get_signal(signal["id"])["status"] == "filled"
+
+
+def test_kill_buy_to_cover_of_a_foreign_short_is_not_booked_as_a_bot_entry(harness):
+    from bot.runner import TrackedOrder
+
+    h = harness
+    now = ny(TUE, 10, 0)
+    h.clock.now = now
+    cid = "kill-cover-QQQ"
+    h.store.upsert_order(
+        OrderIntent("QQQ", Side.BUY, 2.0, 100.0, OrderPurpose.KILL, "flatten", cid),
+        OrderResult(cid, "b-1", "filled", 2.0, 100.5),
+    )
+    order = TrackedOrder(cid, "QQQ", Side.BUY.value, OrderPurpose.KILL.value, "kill", None, 2.0, 100.0, "flatten", to_iso(now))
+    assert h.runner._reconcile_order(order, now) is True  # final, no exception, no re-trip loop
+    assert "QQQ" not in h.store.get_positions()
+    assert h.notifier.said("(kill, not a bot position)")

@@ -217,11 +217,11 @@ def walk(n: int, seed: int, freq: str, drift: float = 0.0012) -> pd.DataFrame:
     open_ = np.concatenate([[100.0], close[:-1]]) * np.exp(rng.normal(0, 0.003, n))
     high = np.maximum(open_, close) * (1 + np.abs(rng.normal(0, 0.005, n)))
     low = np.minimum(open_, close) * (1 - np.abs(rng.normal(0, 0.005, n)))
-    idx = pd.date_range("2017-01-02", periods=n, freq=freq, name="date")
+    idx = pd.date_range("2015-09-01", periods=n, freq=freq, name="date")  # warm before the 2017 IS start
     return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close, "volume": 1e6}, index=idx)
 
 
-SYNTHETIC = {"SPY": walk(1000, 1, "B"), "BTC/USD": walk(1400, 2, "D")}
+SYNTHETIC = {"SPY": walk(1400, 1, "B"), "BTC/USD": walk(1950, 2, "D")}
 LENIENT = {"max_drawdown_pct": 50.0, "min_win_rate": 0.0, "min_profit_factor": 0.0, "min_trades": 1,
            "require_positive_in_sample": False, "require_positive_out_of_sample": False}
 
@@ -253,8 +253,9 @@ def test_tournament_results_follow_the_schema(results):
     assert results["n_configs"] == len(results["runs"]) == 2 * n_grid
     assert set(results) >= {"generated_at", "data", "config", "n_configs", "runs", "winners", "portfolio",
                             "winner_equity"}
-    assert results["data"]["SPY"] == {"first": "2017-01-02", "last": SYNTHETIC["SPY"].index[-1].date().isoformat(),
-                                      "bars": 1000}
+    spy = SYNTHETIC["SPY"]
+    assert results["data"]["SPY"] == {"first": spy.index[0].date().isoformat(),
+                                      "last": spy.index[-1].date().isoformat(), "bars": len(spy)}
     run0 = results["runs"][0]
     assert set(run0) >= {"symbol", "strategy", "label", "params", "in_sample", "out_of_sample", "full", "passed",
                          "fail_reasons", "score", "regimes", "approvals", "neighbors_passing", "n_neighbors"}
@@ -404,3 +405,10 @@ def test_run_and_write_with_apply(small_md, tmp_path, monkeypatch):
             assert dict(cfg.assets[symbol].params) == winner["params"]
     text = small_md.read_text()
     assert "The tournament hasn't run yet" not in text and "Not run yet.\n\n<!-- END TOURNAMENT" not in text
+
+
+def test_tournament_refuses_a_window_that_starts_before_warmup(small_md):
+    cfg = load_strategy(small_md)
+    cold = {s: b.loc["2016-06-01":] for s, b in SYNTHETIC.items()}  # too little history before 2017-01-02
+    with pytest.raises(ValueError, match="not warm until"):
+        run_tournament(cfg, bars=cold)

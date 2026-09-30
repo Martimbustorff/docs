@@ -34,6 +34,14 @@ class _Strict(BaseModel):
 # --------------------------------------------------------------------------- strategy.md schema
 
 
+def check_symbol(symbol: str) -> str:
+    """US stock/ETF tickers ("SPY") or crypto pairs against USD ("BTC/USD"). Anything else, such as
+    Yahoo's "BTC-USD", is refused: it would be priced and annualised as a stock."""
+    if not re.fullmatch(r"[A-Z]{1,5}|[A-Z]{2,6}/USD", symbol):
+        raise ValueError(f"unsupported symbol {symbol!r}; use e.g. SPY or BTC/USD")
+    return symbol
+
+
 class AssetRule(_Strict):
     enabled: bool = True
     strategy: str  # registry name: trend | breakout | meanrev | momentum
@@ -135,8 +143,7 @@ class StrategyConfig(_Strict):
     @classmethod
     def _known_symbols(cls, value: dict[str, AssetRule]) -> dict[str, AssetRule]:
         for symbol in value:
-            if not re.fullmatch(r"[A-Z]{1,5}|[A-Z]{2,6}/USD", symbol):
-                raise ValueError(f"unsupported symbol {symbol!r}; use e.g. SPY or BTC/USD")
+            check_symbol(symbol)
         return value
 
     @property

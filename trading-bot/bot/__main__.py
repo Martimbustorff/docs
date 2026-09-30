@@ -22,7 +22,16 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from bot.config import ROOT, STRATEGY_PATH, ConfigError, Settings, StrategyConfig, load_settings, load_strategy
+from bot.config import (
+    ROOT,
+    STRATEGY_PATH,
+    ConfigError,
+    Settings,
+    StrategyConfig,
+    check_symbol,
+    load_settings,
+    load_strategy,
+)
 from bot.models import OrderResult
 from bot.timeutil import UTC, ny_trading_day, utcnow
 
@@ -155,6 +164,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     symbol = args.symbol.upper()
     params = parse_params(args.params)
     try:
+        check_symbol(symbol)
         strategy = build(args.strategy_name, symbol, params)
         bt_cfg = BacktestConfig.from_strategy(cfg, symbol)
     except ValueError as exc:

@@ -469,3 +469,8 @@ def test_watchdog_stays_quiet_while_the_loop_progresses(monkeypatch):
     finally:
         stop.set()
         real_time.sleep(0.05)
+
+
+def test_backtest_refuses_the_yahoo_crypto_spelling(run):
+    code, _, err = run("backtest", "--symbol", "BTC-USD", "--strategy", "momentum")
+    assert code == 2 and "BTC/USD" in err

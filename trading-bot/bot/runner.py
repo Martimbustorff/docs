@@ -518,8 +518,13 @@ class Runner:
         filled = float(row["filled_qty"] or 0.0) if row else 0.0
         avg = row["filled_avg_price"] if row else None
         if filled > order.applied_qty + QTY_EPSILON and avg:
-            if order.side == Side.BUY.value:
+            if order.purpose == OrderPurpose.ENTRY.value:
                 self._apply_buy(order, filled, float(avg))
+            elif order.side == Side.BUY.value:  # a kill flatten covering a short the bot never opened
+                self._alert(
+                    f"Filled: BUY {_qty(filled - order.applied_qty)} {order.symbol} @ {_price(float(avg))} "
+                    f"({order.purpose}, not a bot position)"
+                )
             else:
                 self._apply_sell(order, filled, float(avg), row, now)
             order.applied_qty, order.applied_avg = filled, float(avg)

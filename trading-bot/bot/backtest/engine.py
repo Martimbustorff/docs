@@ -327,7 +327,7 @@ def run_backtest(
         log.warning("%s: no bars in [%s, %s]; nothing to backtest", strategy.symbol, start, end)
         return result
 
-    df = strategy.prepare(bars)  # full history, once: indicators are warm at `start`
+    df = strategy.prepare(bars)  # full history, once: warm at `start` if enough bars precede it
     if len(df) != len(bars) or not df.index.equals(bars.index):
         raise ValueError(f"{strategy.name}.prepare must keep the bars' index unchanged")
 
