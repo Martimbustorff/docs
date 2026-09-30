@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 import pandas as pd
+import requests
 from alpaca.common.exceptions import APIError
 from alpaca.data.enums import Adjustment, DataFeed
 from alpaca.data.historical.crypto import CryptoHistoricalDataClient
@@ -54,8 +55,10 @@ if TYPE_CHECKING:
     from bot.store import Store
 
 log = logging.getLogger(__name__)
+HTTP_TIMEOUT = (5.0, 30.0)  # (connect, read) seconds for every Alpaca call; alpaca-py sets none
 SIP_DELAY = timedelta(minutes=16)  # free Alpaca plans may read SIP data older than 15 minutes
 MIN_HOURS_PER_DAY = 20
+SESSION_OPEN, SESSION_CLOSE = time(9, 30), time(16, 0)  # SimBroker(market_hours=True)
 
 BAR_COLUMNS = ("open", "high", "low", "close", "volume")
 MAX_CLIENT_ORDER_ID = 48
@@ -216,6 +219,24 @@ def _utc_days_from_hours(hours: list[Any], start: date, end: date | None, now: d
     ).dropna()
 
 
+class _TimeoutSession(requests.Session):
+    def __init__(self, timeout: tuple[float, float]) -> None:
+        super().__init__()
+        self._timeout = timeout
+
+    def request(self, method: str | bytes, url: str | bytes, *args: Any, **kwargs: Any) -> requests.Response:
+        kwargs.setdefault("timeout", self._timeout)
+        return super().request(method, url, *args, **kwargs)
+
+
+def with_timeout(client: Any, timeout: tuple[float, float] = HTTP_TIMEOUT) -> Any:
+    """Give an alpaca-py client its own session with a default timeout. alpaca-py shares one
+    class-level `requests.Session` without any timeout, so one stalled connection would freeze
+    the loop, and with it every stop, exit and /kill."""
+    client._session = _TimeoutSession(timeout)
+    return client
+
+
 # --------------------------------------------------------------------------- live-trading guard
 
 
@@ -312,9 +333,9 @@ class AlpacaBroker:
             raise ConfigError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set to use Alpaca")
         key, secret = api_key.get_secret_value(), secret_key.get_secret_value()
         self.is_paper = settings.alpaca_paper
-        self.trading = TradingClient(api_key=key, secret_key=secret, paper=settings.alpaca_paper)
-        self.stock_data = StockHistoricalDataClient(api_key=key, secret_key=secret)
-        self.crypto_data = CryptoHistoricalDataClient(api_key=key, secret_key=secret)
+        self.trading = with_timeout(TradingClient(api_key=key, secret_key=secret, paper=settings.alpaca_paper))
+        self.stock_data = with_timeout(StockHistoricalDataClient(api_key=key, secret_key=secret))
+        self.crypto_data = with_timeout(CryptoHistoricalDataClient(api_key=key, secret_key=secret))
         self._clock = clock
 
     def account(self) -> AccountSnapshot:
@@ -446,7 +467,10 @@ class SimBroker:
         fail_next: int = 0,
         is_paper: bool = True,
         clock: Callable[[], datetime] = utcnow,
+        market_hours: bool = False,
     ) -> None:
+        """`market_hours=True` follows the regular New York session (weekdays 09:30-16:00,
+        holidays ignored) for dry runs; otherwise `market_open`/`next_open_at` are set by tests."""
         if not 0 < fill_ratio <= 1:
             raise ValueError("fill_ratio must be in (0, 1]")
         self.is_paper = is_paper
@@ -463,6 +487,7 @@ class SimBroker:
         self.cancel_all_calls = 0
         self._holdings: dict[str, tuple[float, float]] = {}  # symbol -> (qty, avg entry price)
         self._clock = clock
+        self._market_hours = market_hours
         self._seq = 0
 
     def set_price(self, symbol: str, price: float) -> None:
@@ -496,9 +521,18 @@ class SimBroker:
         return bars.loc[pd.Timestamp(start) : pd.Timestamp(end) if end else None].copy()
 
     def is_market_open(self) -> bool:
+        if self._market_hours:
+            local = self._clock().astimezone(NY)
+            return local.weekday() < 5 and SESSION_OPEN <= local.time() < SESSION_CLOSE
         return self.market_open
 
     def next_open(self) -> datetime:
+        if self._market_hours:
+            local = self._clock().astimezone(NY)
+            day = local.date() if local.time() < SESSION_OPEN else local.date() + timedelta(days=1)
+            while day.weekday() >= 5:
+                day += timedelta(days=1)
+            return datetime.combine(day, SESSION_OPEN, tzinfo=NY).astimezone(UTC)
         return self.next_open_at or self._clock()
 
     def submit(self, intent: OrderIntent) -> OrderResult:

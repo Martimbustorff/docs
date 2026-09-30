@@ -983,7 +983,7 @@ def test_drift_drops_unknown_bot_position_and_alerts_on_foreign_one(harness):
     h.tick(ny(MON, 12, 0), price=100.0)
     assert h.store.get_positions() == {}
     assert h.notifier.said("dropped the bot's SPY position")
-    assert h.notifier.said("holds 2 QQQ that the bot did not open. Not managed.")
+    assert h.notifier.said("holds 2 QQQ that the bot did not open. The bot won't trade it, but the kill switch will sell it.")
     h.tick(ny(MON, 12, 1))
     assert len([t for t in h.notifier.sent if "QQQ that the bot did not open" in t]) == 1
 
@@ -1233,3 +1233,27 @@ def test_paper_matches_backtest_on_real_spy_bars(tmp_path, name, params):
     # the reasons agree too.
     assert sum(r1 != r2 for (_, r1), (_, r2) in zip(live_exits, bt_exits)) <= 1
     assert h.risk.consecutive_errors == 0 and not h.kill.is_tripped()
+
+
+class AmbiguousSubmitBroker(SimBroker):
+    """The order reaches the broker and fills, but the client sees a timeout."""
+
+    def submit(self, intent):
+        super().submit(intent)
+        raise TimeoutError("read timed out")
+
+
+def test_ambiguous_entry_submit_is_adopted_with_its_stop(tmp_path, scripted):
+    h = Harness(tmp_path, make_cfg())
+    h.broker = AmbiguousSubmitBroker(cash=100_000.0, clock=h.clock)
+    h.broker.market_open = False
+    h.gateway = OrderGateway(h.broker, h.risk, h.kill, h.store, h.settings, h.notifier)
+    h.runner = h.new_runner()
+    assert h.after_close(MON) == []
+    h.tick(ny(TUE, 9, 31), price=101.0, market_open=True)
+    signal = h.entry_signal_row()
+    assert signal["status"] == "submitted"  # not "skipped": the fill may exist
+    h.tick(ny(TUE, 9, 32))
+    position = h.store.get_positions()["SPY"]
+    assert position.qty == 20 and position.stop_price == 95.0
+    assert h.store.get_signal(signal["id"])["status"] == "filled"

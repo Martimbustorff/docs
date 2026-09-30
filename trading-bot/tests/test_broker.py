@@ -792,3 +792,37 @@ def test_alpaca_empty_bars_have_the_frame_shape(alpaca):
     frame = alpaca.daily_bars("QQQ", date(2026, 9, 1))
     assert frame.empty and list(frame.columns) == ["open", "high", "low", "close", "volume"]
     assert frame.index.name == "date" and isinstance(frame.index, pd.DatetimeIndex)
+
+
+def test_sim_broker_market_hours_follow_the_new_york_session():
+    clock = {"now": datetime(2026, 10, 2, 13, 0, tzinfo=UTC)}  # Friday 09:00 New York
+    sim = SimBroker(market_hours=True, clock=lambda: clock["now"])
+    assert not sim.is_market_open()
+    assert sim.next_open() == datetime(2026, 10, 2, 13, 30, tzinfo=UTC)
+    clock["now"] = datetime(2026, 10, 2, 15, 0, tzinfo=UTC)  # Friday 11:00
+    assert sim.is_market_open()
+    assert sim.next_open() == datetime(2026, 10, 5, 13, 30, tzinfo=UTC)  # Monday
+    clock["now"] = datetime(2026, 10, 3, 15, 0, tzinfo=UTC)  # Saturday
+    assert not sim.is_market_open()
+
+
+def test_alpaca_clients_get_a_default_http_timeout(alpaca, monkeypatch):
+    for client in (alpaca.trading, alpaca.stock_data, alpaca.crypto_data):
+        assert isinstance(client._session, broker_mod._TimeoutSession)
+    seen = {}
+
+    def fake_request(self, method, url, *args, **kwargs):
+        seen.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(broker_mod.requests.Session, "request", fake_request)
+    assert alpaca.trading._session.request("GET", "https://paper-api.alpaca.markets/v2/clock") == "ok"
+    assert seen["timeout"] == broker_mod.HTTP_TIMEOUT
+
+
+def test_with_timeout_replaces_the_shared_session_on_a_real_client():
+    from alpaca.trading.client import TradingClient as RealTradingClient
+
+    client = RealTradingClient(api_key="k" * 20, secret_key="s" * 40, paper=True)
+    assert not isinstance(client._session, broker_mod._TimeoutSession)
+    assert isinstance(broker_mod.with_timeout(client)._session, broker_mod._TimeoutSession)

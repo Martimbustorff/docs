@@ -205,7 +205,7 @@ def cmd_tournament(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from bot.broker import AlpacaBroker, OrderGateway, assert_trading_allowed
+    from bot.broker import AlpacaBroker, OrderGateway
     from bot.jev import JevGate
     from bot.notify import ConsoleNotifier, build_notifier
     from bot.risk import KillSwitch, RiskManager
@@ -217,7 +217,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         # Separate state, so a dry run can never touch the real bot's database or kill switch.
         settings = settings.model_copy(update={"data_dir": settings.data_dir / "dry-run"})
         settings.data_dir.mkdir(parents=True, exist_ok=True)
-    assert_trading_allowed(settings, settings.live_gate_path)
+    _startup_guard(settings)
     if args.dry_run:
         broker: Any = _dry_run_broker(cfg)
     else:
@@ -239,6 +239,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         failed = runner.tick()
         print(f"One tick done: {mode}" + (f"; failed steps: {', '.join(failed)}" if failed else "."))
         return EXIT_FAILED if failed else EXIT_OK
+    _start_watchdog(runner, stall_s=max(300.0, 5.0 * cfg.execution.poll_seconds))
     try:
         runner.run_forever()
     except KeyboardInterrupt:
@@ -246,11 +247,63 @@ def cmd_run(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _start_watchdog(runner: Any, stall_s: float, interval_s: float = 30.0) -> Any:
+    """Exit the process if the loop stops making progress (a hung network call, a deadlock), so
+    Docker's restart policy brings the bot back and stops, exits and /kill work again.
+    Returns the Event that stops the watchdog."""
+    import threading
+
+    stop = threading.Event()
+
+    def watch() -> None:
+        while not stop.wait(interval_s):
+            last = getattr(runner, "last_progress", None)
+            if last is not None and time.monotonic() - last > stall_s:
+                log.critical("the runner loop made no progress for %.0fs; exiting so it restarts", stall_s)
+                logging.shutdown()
+                os._exit(EXIT_FAILED)
+
+    threading.Thread(target=watch, name="watchdog", daemon=True).start()
+    return stop
+
+
+def _startup_guard(settings: Settings) -> None:
+    """Refuse a mismatched mode/endpoint, and live mode that never passed the final check.
+
+    A final check that passed but has since expired does not stop the process: the runner keeps
+    blocking entries every tick, and refusing to start would leave open positions without stops
+    after any restart or reboot.
+    """
+    from bot.broker import assert_trading_allowed
+
+    assert_trading_allowed(settings, settings.live_gate_path, risk_increasing=False)
+    if settings.trading_mode != "live":
+        return
+    try:
+        assert_trading_allowed(settings, settings.live_gate_path)
+    except ConfigError as exc:
+        if not _gate_passed_once(settings.live_gate_path):
+            raise
+        log.warning(
+            "%s. Starting anyway so stops and exits keep protecting open positions; "
+            "new entries stay blocked until you re-run final-check.", exc,
+        )
+
+
+def _gate_passed_once(path: Path) -> bool:
+    try:
+        return json.loads(path.read_text()).get("passed") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def _dry_run_broker(cfg: StrategyConfig) -> Any:
     from bot.broker import SimBroker
     from bot.data import load_daily
 
-    broker = SimBroker(cash=cfg.risk.capital_usd, slippage_bps=cfg.execution.slippage_bps.get("stock", 0.0))
+    broker = SimBroker(
+        cash=cfg.risk.capital_usd, slippage_bps=cfg.execution.slippage_bps.get("stock", 0.0), market_hours=True
+    )
     for symbol in cfg.assets:
         try:
             bars = load_daily(symbol)

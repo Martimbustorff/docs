@@ -422,3 +422,50 @@ def test_python_dash_m_entry_point(tmp_path):
     )  # fmt: skip
     assert proc.returncode == 0, proc.stderr
     assert "Kill switch: off" in proc.stdout
+
+
+def test_run_starts_after_a_passed_gate_expires_so_stops_keep_working(run, monkeypatch):
+    from bot.config import LIVE_ACK_PHRASE
+
+    monkeypatch.setenv("TRADING_MODE", "live")
+    monkeypatch.setenv("ALPACA_PAPER", "false")
+    monkeypatch.setenv("LIVE_TRADING_ACK", LIVE_ACK_PHRASE)
+    run.data_dir.mkdir(parents=True, exist_ok=True)
+    (run.data_dir / "live_gate.json").write_text(json.dumps({"passed": True, "ts": "2020-01-01T00:00:00+00:00"}))
+    code, _, err = run("run", "--once")
+    # Past the live guard: it now stops only at the missing Alpaca keys.
+    assert code == 2 and "--dry-run" in err and "final-check" not in err
+
+
+def test_watchdog_exits_when_the_loop_stalls(monkeypatch):
+    import threading
+    import time as real_time
+
+    from bot import __main__ as cli
+
+    exited = threading.Event()
+    monkeypatch.setattr(cli.os, "_exit", lambda code: exited.set())
+    stalled = types.SimpleNamespace(last_progress=real_time.monotonic() - 1_000)
+    stop = cli._start_watchdog(stalled, stall_s=300, interval_s=0.01)
+    try:
+        assert exited.wait(2)
+    finally:
+        stop.set()
+        real_time.sleep(0.05)  # let the thread see the stop flag before the real os._exit is restored
+
+
+def test_watchdog_stays_quiet_while_the_loop_progresses(monkeypatch):
+    import threading
+    import time as real_time
+
+    from bot import __main__ as cli
+
+    exited = threading.Event()
+    monkeypatch.setattr(cli.os, "_exit", lambda code: exited.set())
+    healthy = types.SimpleNamespace(last_progress=real_time.monotonic())
+    stop = cli._start_watchdog(healthy, stall_s=300, interval_s=0.01)
+    try:
+        assert not exited.wait(0.2)
+    finally:
+        stop.set()
+        real_time.sleep(0.05)

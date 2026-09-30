@@ -1152,8 +1152,8 @@ def _check_fill_quality(paper: _Paper, replays: list[_Replay], cfg: StrategyConf
         return _Check("fill_quality", "Fill quality", False, NO_HISTORY, value, threshold, "n/a", shown_threshold)
     if simulated:
         detail = (
-            f"{simulated} fill(s) in the store came from SimBroker, so a --dry-run shares this database; "
-            "paper evidence must come from Alpaca fills only. Give the dry run its own BOT_DATA_DIR."
+            f"{simulated} fill(s) in the store came from SimBroker (simulated), so this database is not a "
+            "paper-trading record; paper evidence must come from Alpaca fills only."
         )
         return _Check("fill_quality", "Fill quality", False, detail, value, threshold, "simulated fills", shown_threshold)
     if not stats:
@@ -1651,7 +1651,8 @@ def _outage_item(f: _Findings) -> tuple[str, str]:
         f"{f.cfg.risk.max_consecutive_errors} consecutive errors the kill switch trips, but its flatten "
         "also needs Alpaca, so positions stay open until it is back. If Jev is down every entry is "
         f"blocked (fail-closed): missed trades, not losses.{jev_text} If Telegram is down, approvals "
-        f"expire after {f.cfg.risk.approval_timeout_minutes / 60:g} hours (missed trades) and /kill never "
+        f"expire (after {f.cfg.risk.approval_timeout_minutes / 60:g} hours for crypto, 30 minutes after the "
+        "next open for stocks), so those are missed trades, and /kill never "
         f"arrives: use `python -m bot kill` on the server or set KILL_SWITCH=1.{logged}"
     )
 
@@ -1684,8 +1685,7 @@ def _config_item(f: _Findings) -> tuple[str, str]:
         "the paper (and any live) account must be dedicated to the bot. `ALPACA_PAPER=false` with live "
         "keys points the bot at real money: the live guard refuses a mismatched mode, but it cannot tell "
         "whether you meant it. Risk limits live in strategy.md, so editing one (for example "
-        "max_position_usd) changes every order without a new backtest. A `run --dry-run` sharing this "
-        "`var/` would mix simulated fills into the paper record."
+        "max_position_usd) changes every order without a new backtest."
     )
 
 

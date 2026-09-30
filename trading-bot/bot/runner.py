@@ -110,7 +110,8 @@ HELP_TEXT = (
     "Commands:\n"
     "/status - mode, kill switch, positions, today's P&L\n"
     "/pnl - realized and unrealized P&L\n"
-    "/kill [reason] - trip the kill switch: cancel orders, close bot positions, stop new entries\n"
+    "/kill [reason] - trip the kill switch: cancel every order and close every position in the account, "
+    "stop new entries\n"
     "/help - this list\n"
     "Approve or reject entries with the buttons on each request. The kill switch is cleared only "
     "on the server: python -m bot resume --confirm"
@@ -324,6 +325,7 @@ class Runner:
     ) -> None:
         self.settings = settings
         self.cfg = cfg
+        self.last_progress: float | None = None  # monotonic time of the last loop iteration (watchdog)
         self.broker = broker
         self.gateway = gateway
         self.risk = risk
@@ -402,6 +404,7 @@ class Runner:
         log.info("runner started: tick every %.0fs, commands every %.0fs", poll_s, FAST_POLL_S)
         next_tick = monotonic()
         while True:
+            self.last_progress = monotonic()
             try:
                 if monotonic() >= next_tick:
                     next_tick = monotonic() + poll_s
@@ -670,7 +673,10 @@ class Runner:
             if symbol not in self._unknown_positions:
                 self._unknown_positions.add(symbol)
                 qty = _qty(at_broker.qty)
-                text = f"Drift: the account holds {qty} {symbol} that the bot did not open. Not managed."
+                text = (
+                    f"Drift: the account holds {qty} {symbol} that the bot did not open. The bot won't trade it, "
+                    "but the kill switch will sell it. Use an account only the bot trades."
+                )
                 log.warning(text)
                 self.store.log_event("warning", "position_drift", text, ts=now)
                 self._alert(text)
@@ -1068,6 +1074,9 @@ class Runner:
             take_profit=signal.take_profit,
         )
         if verdict.action is RiskAction.NEEDS_APPROVAL:
+            if expires <= now:  # the bar was processed after its execution window had closed
+                self._set_signal(signal_id, status="expired", risk_reason="bar processed after its execution window closed")
+                return
             self._request_approval(item, signal, verdict.reason, jev_reason, expires, now)
             return
         self._upsert_queued(item)
@@ -1229,11 +1238,12 @@ class Runner:
             intent = replace(intent, qty=verdict.adjusted_qty)
         self._track(intent, item.strategy, now, stop=item.stop, take_profit=item.take_profit)
         result = self.gateway.submit(intent)
-        if _never_sent_result(result):
+        if result.status == "refused":
             self._untrack(cid)
-            status = "blocked" if result.status == "refused" else "skipped"
-            self._set_signal(item.signal_id, status=status, risk_reason=f"order {result.status}: {result.message}")
+            self._set_signal(item.signal_id, status="blocked", risk_reason=f"order refused: {result.message}")
             return True
+        # A "rejected" result without a broker id may still have reached Alpaca (timeout, reset). The order
+        # stays tracked: the next poll asks the broker and adopts any fill, so the position gets its stop.
         self._set_signal(item.signal_id, order_client_id=cid, status="submitted")
         return True
 

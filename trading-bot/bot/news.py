@@ -87,7 +87,9 @@ def _alpaca_client(settings: Settings) -> NewsClient | None:
     key, secret = settings.alpaca_api_key, settings.alpaca_secret_key
     if key is None or secret is None:
         return None
-    return NewsClient(api_key=key.get_secret_value(), secret_key=secret.get_secret_value())
+    from bot.broker import with_timeout
+
+    return with_timeout(NewsClient(api_key=key.get_secret_value(), secret_key=secret.get_secret_value()))
 
 
 def _to_headline(article: News) -> Headline | None:
