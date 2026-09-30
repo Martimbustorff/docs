@@ -322,14 +322,14 @@ def test_approve_callback_is_answered_and_the_message_edited(api, make):
 
     commands = make().poll()
 
-    assert commands == [Command(kind="approve", approval_id=17, chat_id=CHAT, text="approve:17")]
-    assert api.payloads("answerCallbackQuery") == [{"callback_query_id": "cb5", "text": "Approved"}]
+    assert commands == [Command(kind="approve", approval_id=17, chat_id=CHAT, text="approve:17", message_id=77)]
+    assert api.payloads("answerCallbackQuery") == [{"callback_query_id": "cb5", "text": "Approve received"}]
     assert api.payloads("editMessageText") == [
         {
             "chat_id": CHAT,
             "message_id": 77,
             "reply_markup": {"inline_keyboard": []},
-            "text": "Approve BUY SPY $1,500?\n\nApproved",
+            "text": "Approve BUY SPY $1,500?\n\nApprove received",
         }
     ]
 
@@ -339,8 +339,8 @@ def test_reject_callback_without_message_text_only_removes_buttons(api, make):
 
     commands = make().poll()
 
-    assert commands == [Command(kind="reject", approval_id=4, chat_id=CHAT, text="reject:4")]
-    assert api.payloads("answerCallbackQuery")[0]["text"] == "Rejected"
+    assert commands == [Command(kind="reject", approval_id=4, chat_id=CHAT, text="reject:4", message_id=77)]
+    assert api.payloads("answerCallbackQuery")[0]["text"] == "Reject received"
     assert api.payloads("editMessageReplyMarkup") == [
         {"chat_id": CHAT, "message_id": 77, "reply_markup": {"inline_keyboard": []}}
     ]

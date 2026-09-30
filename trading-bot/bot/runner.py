@@ -734,14 +734,19 @@ class Runner:
         elif command.kind == "pnl":
             self._alert(self.pnl_text(now))
         elif command.kind in ("approve", "reject") and command.approval_id is not None:
-            self._decide(command.kind, command.approval_id, now)
+            self._decide(command.kind, command.approval_id, now, command.message_id)
         else:
             self._alert(HELP_TEXT)
 
-    def _decide(self, kind: str, approval_id: int, now: datetime) -> None:
+    def _decide(self, kind: str, approval_id: int, now: datetime, message_id: int | None) -> None:
         approval = self.store.get_approval(approval_id)
         if approval is None:
             self._alert(f"Approval #{approval_id} does not exist.")
+            return
+        if message_id is None or approval["message_id"] != message_id:
+            # A button from another message (for example from before a database reset) must never
+            # decide a newer request that happens to reuse its id.
+            self._alert(f"Approval #{approval_id}: that button belongs to a different message; nothing was sent.")
             return
         if approval["status"] == "pending" and now >= parse_ts(approval["expires_ts"]):
             self._expire_approval(approval, now, "it was answered after it expired")
@@ -756,12 +761,25 @@ class Runner:
             self._alert(f"Approval #{approval_id} not accepted: the kill switch is tripped.")
             return
         item = self._queued_for_approval(approval_id)
-        price = self.broker.last_price(item.symbol) if item is not None else None  # before deciding
+        price: float | None = None
+        if item is not None:
+            try:
+                price = self.broker.last_price(item.symbol)
+            except Exception as exc:  # the drift check runs again when the order goes out
+                log.warning("price check for approval #%s failed: %s", approval_id, exc)
         if not self.store.set_approval(approval_id, "approved", now=now):
             self._alert(f"Approval #{approval_id} was already decided or has expired; nothing was sent.")
             return
-        if item is None or price is None:
+        if item is None:
             self._alert(f"Approval #{approval_id} has no queued order (superseded); nothing will be sent.")
+            return
+        if price is None:
+            self._update_queued(approval_id, approved=True)
+            self._set_signal(item.signal_id, status="queued")
+            self._alert(
+                f"Approved #{approval_id}: the price check failed now and runs again when the order goes out at "
+                f"{_ny(item.window_open)}."
+            )
             return
         drift = abs(price / item.signal_price - 1) * 100
         limit = self.cfg.risk.approval_max_price_drift_pct
@@ -1534,10 +1552,11 @@ class Runner:
         self._errors_this_tick += 1
         text = redact(f"{type(exc).__name__}: {exc}", self.settings)[:500]
         log.error("runner step %s failed: %s", where, text, exc_info=exc)
-        try:
-            self.risk.after_error()
-        except Exception:
-            log.exception("could not count the error")
+        if self._errors_this_tick == 1:  # one outage breaks several steps; it counts once per poll
+            try:
+                self.risk.after_error()
+            except Exception:
+                log.exception("could not count the error")
         try:
             self.store.log_event("error", "runner_error", f"{where}: {text}", ts=now)
         except Exception:

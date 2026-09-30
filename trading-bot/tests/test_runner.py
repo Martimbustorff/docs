@@ -149,8 +149,10 @@ class RecordingNotifier:
         commands, self.commands = self.commands, []
         return commands
 
-    def script(self, kind: str, approval_id: int | None = None, text: str = "") -> None:
-        self.commands.append(Command(kind, approval_id, "42", text or f"{kind}:{approval_id}"))
+    def script(self, kind: str, approval_id: int | None = None, text: str = "", message_id: int | None = None) -> None:
+        if message_id is None and approval_id is not None:
+            message_id = 1000 + approval_id  # the id request_approval returned for this approval
+        self.commands.append(Command(kind, approval_id, "42", text or f"{kind}:{approval_id}", message_id))
 
     def said(self, fragment: str) -> bool:
         return any(fragment in text for text in self.sent)
@@ -1274,3 +1276,54 @@ def test_kill_buy_to_cover_of_a_foreign_short_is_not_booked_as_a_bot_entry(harne
     assert h.runner._reconcile_order(order, now) is True  # final, no exception, no re-trip loop
     assert "QQQ" not in h.store.get_positions()
     assert h.notifier.said("(kill, not a bot position)")
+
+
+def test_one_outage_counts_once_per_poll_toward_the_error_kill(harness):
+    h = harness
+    h.open_position()
+
+    def down(*args, **kwargs):
+        raise ConnectionError("alpaca 503")
+
+    h.broker.positions = down
+    h.broker.last_price = down
+    failed = h.tick(ny(WED, 11, 0), market_open=True)
+    assert len(failed) >= 2  # several steps broke on the same outage...
+    assert h.risk.consecutive_errors == 1  # ...but it counts once
+    for minute in range(1, 4):
+        h.tick(ny(WED, 11, minute))
+    assert h.risk.consecutive_errors == 4 and not h.kill.is_tripped()
+    h.tick(ny(WED, 11, 4))
+    assert h.kill.is_tripped()  # five failing polls in a row trip it, as documented
+
+
+def test_approve_button_from_another_message_is_refused(approvals):
+    h = approvals
+    h.after_close(MON)
+    ((approval_id, _),) = h.notifier.approvals
+    h.clock.now = ny(MON, 20, 0)
+    h.notifier.script("approve", approval_id, message_id=9999)  # e.g. a button from before a database reset
+    h.runner.handle_commands()
+    assert h.store.get_approval(approval_id)["status"] == "pending"
+    assert h.notifier.said("belongs to a different message")
+
+
+def test_approval_survives_a_failed_price_check(approvals):
+    h = approvals
+    h.after_close(MON)
+    ((approval_id, _),) = h.notifier.approvals
+    signal = h.entry_signal_row()
+
+    def down(symbol):
+        raise ConnectionError("alpaca 503")
+
+    real_last_price = h.broker.last_price
+    h.broker.last_price = down
+    h.clock.now = ny(MON, 20, 0)
+    h.notifier.script("approve", approval_id)
+    h.runner.handle_commands()
+    assert h.store.get_approval(approval_id)["status"] == "approved"
+    assert h.store.get_signal(signal["id"])["status"] == "queued"
+    h.broker.last_price = real_last_price
+    assert h.tick(ny(TUE, 9, 31), price=100.8, market_open=True) == []
+    assert [o.qty for o in h.broker.submitted] == [20]  # the drift check ran again at execution

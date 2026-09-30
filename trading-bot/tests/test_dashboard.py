@@ -368,9 +368,10 @@ def test_healthz_is_open_and_trivial(make_client, store):
 def test_without_a_password_only_loopback_clients_are_served(tmp_path, strategy_cfg, store):
     settings = load_settings(env_file=None, environ={"BOT_DATA_DIR": str(tmp_path / "var2")})
     app = create_app(settings, strategy_cfg, store, tmp_path / "missing.json")
-    assert TestClient(app, client=("127.0.0.1", 50000)).get("/").status_code == 200
-    assert TestClient(app, client=("::1", 50000)).get("/").status_code == 200
-    remote = TestClient(app, client=("203.0.113.9", 50000))
+    local = "http://127.0.0.1:8080"
+    assert TestClient(app, base_url=local, client=("127.0.0.1", 50000)).get("/").status_code == 200
+    assert TestClient(app, base_url="http://localhost:8080", client=("::1", 50000)).get("/").status_code == 200
+    remote = TestClient(app, base_url=local, client=("203.0.113.9", 50000))
     assert remote.get("/").status_code == 403
     assert remote.get("/", headers=basic("admin", "")).status_code == 403
     assert remote.get("/healthz").status_code == 200
@@ -736,3 +737,13 @@ def test_nice_ticks_cover_the_range():
     assert charts.nice_ticks(0, 7, integer=True) == [0, 2, 4, 6, 8]
     ticks = charts.nice_ticks(5, 5)
     assert ticks[0] < 5 < ticks[-1]
+
+
+def test_without_a_password_a_rebound_host_name_is_refused(tmp_path, strategy_cfg, store):
+    """DNS rebinding: the browser connects from loopback but sends the attacker's host name."""
+    settings = load_settings(env_file=None, environ={"BOT_DATA_DIR": str(tmp_path / "var3")})
+    app = create_app(settings, strategy_cfg, store, tmp_path / "missing.json")
+    rebound = TestClient(app, base_url="http://evil.example:8080", client=("127.0.0.1", 50000))
+    assert rebound.get("/").status_code == 403
+    assert rebound.get("/signals").status_code == 403
+    assert rebound.get("/healthz").status_code == 200

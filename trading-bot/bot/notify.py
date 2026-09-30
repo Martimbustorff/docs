@@ -69,6 +69,7 @@ class Command:
     approval_id: int | None
     chat_id: str
     text: str
+    message_id: int | None = None  # the approval message a button belongs to
 
     @property
     def argument(self) -> str:
@@ -347,10 +348,18 @@ class TelegramNotifier:
             self._answer_callback(query.get("id"), "Unknown button")
             return None
         kind: CommandKind = "approve" if match.group(1) == "approve" else "reject"
-        label = "Approved" if kind == "approve" else "Rejected"
+        # The bot still checks expiry, price drift and risk; it confirms the outcome in a new message.
+        label = "Approve received" if kind == "approve" else "Reject received"
         self._answer_callback(query.get("id"), label)
         self._show_decision(message, label)
-        return Command(kind=kind, approval_id=int(match.group(2)), chat_id=chat_id, text=match.group(0))
+        message_id = message.get("message_id")
+        return Command(
+            kind=kind,
+            approval_id=int(match.group(2)),
+            chat_id=chat_id,
+            text=match.group(0),
+            message_id=message_id if _is_int(message_id) else None,
+        )
 
     def _answer_callback(self, query_id: Any, text: str) -> None:
         if isinstance(query_id, str) and query_id:

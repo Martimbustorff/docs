@@ -1,0 +1,17 @@
+# Direct runtime dependencies. requirements.txt is the full lock generated from this file:
+#   python3.11 -m venv /tmp/lock && /tmp/lock/bin/pip install -r requirements.in
+#   /tmp/lock/bin/pip freeze > requirements.txt   (then re-add this header)
+typesafe-sdk==0.7.2
+alpaca-py==0.44.0
+pandas==3.0.6
+numpy==2.4.6
+pyyaml==6.0.3
+python-dotenv==1.2.3
+pydantic==2.13.5
+requests==2.34.2
+fastapi==0.142.2
+uvicorn==0.54.0
+jinja2==3.1.6
+httpx==0.28.1
+httpx2==2.13.1
+yfinance==1.7.0

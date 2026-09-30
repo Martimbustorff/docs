@@ -320,9 +320,12 @@ def _auth_refusal(request: Request, settings: Settings) -> Response | None:
         return None
     password = _password(settings)
     if not password:
-        if is_loopback(request.client.host if request.client else None):
+        # The Host check stops DNS rebinding: a web page can't reach 127.0.0.1 under a loopback host name.
+        if is_loopback(request.client.host if request.client else None) and is_loopback(request.url.hostname):
             return None
-        return PlainTextResponse("DASHBOARD_PASSWORD is not set, so only loopback clients are served.", 403)
+        return PlainTextResponse(
+            "DASHBOARD_PASSWORD is not set, so only loopback clients using a loopback host name are served.", 403
+        )
     given = _basic_credentials(request.headers.get("authorization"))
     if given is not None and _credentials_match(given, settings.dashboard_user, password):
         return None
