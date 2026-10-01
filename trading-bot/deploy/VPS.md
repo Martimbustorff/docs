@@ -579,6 +579,9 @@ every item below is true.
 
 Only then do all of these, together:
 
+- Close every paper position first: run `docker compose exec bot python -m bot kill`, wait until
+  `status` shows no positions, then run `resume --confirm`. The bot's records of open positions
+  belong to the paper account.
 - Create live Alpaca keys, with trade permission only, for an account that holds nothing else.
   The kill switch closes every position in the account.
 - In `.env`, set `ALPACA_PAPER=false` and `TRADING_MODE=live`.
@@ -587,16 +590,17 @@ Only then do all of these, together:
 - Run `docker compose up -d --force-recreate`.
 
 `python -m bot run` refuses to start when `TRADING_MODE`, `ALPACA_PAPER` and `LIVE_TRADING_ACK`
-don't agree. In live mode, it also refuses when `var/live_gate.json` doesn't record a passed
-final check.
+don't agree. It also refuses the first live start when `var/live_gate.json` doesn't record a
+passed final check.
 
 The live gate expires after 7 days. Once a passed `var/live_gate.json` is older than that, the
 bot blocks new entries. Stops, exits and the kill switch keep working, so open positions stay
 protected. The bot keeps running, and it restarts safely after a crash or a reboot.
 
 Re-run `final-check` at least weekly while you trade live. A failed run overwrites
-`var/live_gate.json` and blocks new entries until a later run passes. While the bot holds
-positions it still starts after a crash or a reboot, so stops and exits keep protecting them.
+`var/live_gate.json` and blocks new entries until a later run passes. Once the bot has started
+live with a passed check, it still restarts after a crash or a reboot, so stops and exits keep
+protecting open positions.
 Run `drill-kill-switch` at least monthly. The `--paper` drill refuses to run in live mode, so use
 the simulated drill.
 

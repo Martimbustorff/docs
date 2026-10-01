@@ -1361,3 +1361,56 @@ def test_heartbeat_url_must_be_https(tmp_path):
 
     with pytest.raises(Exception, match="https"):
         load_settings(env_file=None, environ={"BOT_DATA_DIR": str(tmp_path), "HEARTBEAT_URL": "http://insecure"})
+
+
+class AmbiguousSellBroker(SimBroker):
+    """Entries go through normally; a sell reaches the broker and fills, but the client times out."""
+
+    def submit(self, intent):
+        result = super().submit(intent)
+        if intent.side is Side.SELL:
+            raise TimeoutError("read timed out")
+        return result
+
+
+def test_ambiguous_stop_sell_is_adopted_and_its_loss_booked(tmp_path, scripted):
+    h = Harness(tmp_path, make_cfg())
+    h.broker = AmbiguousSellBroker(cash=100_000.0, clock=h.clock)
+    h.broker.market_open = False
+    h.gateway = OrderGateway(h.broker, h.risk, h.kill, h.store, h.settings, h.notifier)
+    h.runner = h.new_runner()
+    h.open_position()
+    h.tick(ny(TUE, 11, 1), price=94.0)  # stop hit: the sell fills at the broker, the client sees a timeout
+    h.tick(ny(TUE, 11, 2))
+    assert h.store.get_positions() == {}
+    (trade,) = h.store.trades()
+    assert trade["exit_reason"] == "stop" and trade["pnl"] == pytest.approx(20 * (94 - 101))
+    assert not h.notifier.said("Drift: dropped")  # adopted as a real fill, not dropped as drift
+
+
+def test_a_vanished_position_books_an_estimated_exit(harness, scripted):
+    h = harness
+    h.open_position()
+    h.broker._holdings.pop("SPY")  # closed outside the bot (or its sell response was lost)
+    h.tick(ny(TUE, 11, 0), price=90.0)
+    assert h.store.get_positions() == {}
+    (trade,) = h.store.trades()
+    assert trade["exit_reason"] == "drift" and trade["pnl"] == pytest.approx(20 * (90 - 101))
+    assert h.notifier.said("Booked an estimated exit at 90.00")
+
+
+def test_no_heartbeat_while_every_kill_flatten_fails(tmp_path, scripted):
+    h = Harness(tmp_path, make_cfg(), HEARTBEAT_URL="https://hc-ping.example/x")
+    pings = []
+    h.runner.ping = pings.append
+    h.open_position()
+    pings.clear()
+
+    def stuck(symbol):
+        raise ConnectionError("alpaca 503")
+
+    h.broker.close_position = stuck
+    h.kill.trip("test", "telegram")
+    for minute in range(10):
+        h.tick(ny(TUE, 11, minute))
+    assert pings == []  # the error counter wraps to 0 at each trip, but no tick was clean

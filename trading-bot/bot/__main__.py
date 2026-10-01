@@ -225,7 +225,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     cfg = _config(args)
     if args.dry_run:
         # Separate state, so a dry run can never touch the real bot's database or kill switch.
-        settings = settings.model_copy(update={"data_dir": settings.data_dir / "dry-run"})
+        settings = settings.model_copy(update={"data_dir": settings.data_dir / "dry-run", "heartbeat_url": None})
         settings.data_dir.mkdir(parents=True, exist_ok=True)
     _startup_guard(settings)
     if args.dry_run:
@@ -269,21 +269,29 @@ def _start_watchdog(runner: Any, stall_s: float, interval_s: float = 30.0) -> An
         while not stop.wait(interval_s):
             last = getattr(runner, "last_progress", None)
             if last is not None and time.monotonic() - last > stall_s:
-                log.critical("the runner loop made no progress for %.0fs; exiting so it restarts", stall_s)
-                logging.shutdown()
+                # Log from a helper thread with a deadline: a stalled loop may hold the log lock.
+                note = threading.Thread(
+                    target=log.critical,
+                    args=("the runner loop made no progress for %.0fs; exiting so it restarts", stall_s),
+                    daemon=True,
+                )
+                note.start()
+                note.join(2.0)
                 os._exit(EXIT_FAILED)
 
     threading.Thread(target=watch, name="watchdog", daemon=True).start()
     return stop
 
 
-def _startup_guard(settings: Settings) -> None:
-    """Refuse a mismatched mode/endpoint, and a live start with nothing to protect that never
-    passed the final check.
+LIVE_STARTED_KEY = "live_started_ts"
 
-    An expired or failed final check does not stop the process when the gate once passed or the
-    bot holds positions: the runner keeps blocking entries every tick, and refusing to start
-    would leave open positions without stops after any restart or reboot.
+
+def _startup_guard(settings: Settings) -> None:
+    """Refuse a mismatched mode/endpoint, and a first live start without a passed final check.
+
+    Once a live start has passed the strict check (or the gate once passed), an expired or failed
+    final check does not stop the process: the runner keeps blocking entries every tick, and
+    refusing to start would leave open positions without stops after any restart or reboot.
     """
     from bot.broker import assert_trading_allowed
 
@@ -293,19 +301,24 @@ def _startup_guard(settings: Settings) -> None:
     try:
         assert_trading_allowed(settings, settings.live_gate_path)
     except ConfigError as exc:
-        if not (_gate_passed_once(settings.live_gate_path) or _holds_positions(settings)):
+        if not (_gate_passed_once(settings.live_gate_path) or _live_started_before(settings)):
             raise
         log.warning(
             "%s. Starting anyway so stops and exits keep protecting open positions; "
             "new entries stay blocked until final-check passes.", exc,
         )
+        return
+    with _store(settings) as store:  # final-check can't overwrite this, unlike live_gate.json
+        store.kv_set(LIVE_STARTED_KEY, utcnow().isoformat())
 
 
-def _holds_positions(settings: Settings) -> bool:
+def _live_started_before(settings: Settings) -> bool:
+    """True once a live start has passed the strict check. Paper runs never set it, so paper rows
+    in a shared database can't open the door to an unchecked live start."""
     if not settings.db_path.exists():
         return False
     with _store(settings) as store:
-        return bool(store.get_positions())
+        return bool(store.kv_get(LIVE_STARTED_KEY))
 
 
 def _gate_passed_once(path: Path) -> bool:

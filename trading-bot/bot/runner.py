@@ -347,7 +347,7 @@ class Runner:
     def tick(self) -> list[str]:
         """One poll. Never raises; returns the names of the steps that failed."""
         now = self._now()
-        errors_before = self.risk.consecutive_errors
+        errors_before = self.risk.errors_total
         self._errors_this_tick = 0
         failed: list[str] = []
 
@@ -380,7 +380,9 @@ class Runner:
         run("bookkeeping", self._bookkeeping, now)
         if not flatten and self._flatten_mode() and guard.exits:
             run("flatten", self._ensure_flat, now)  # tripped during this tick: don't wait a poll
-        if not failed and self._errors_this_tick == 0 and self.risk.consecutive_errors <= errors_before:
+        # Clean only if nothing counted an error this tick: the consecutive count can wrap to 0 when
+        # it trips the kill switch, and the gateway's own successes can reset it mid-tick.
+        if not failed and self._errors_this_tick == 0 and self.risk.errors_total == errors_before:
             self.risk.after_success()
             self._ping_heartbeat(now)
         return failed
@@ -496,7 +498,7 @@ class Runner:
         busy = {o.symbol for o in tracked.values()}  # fills not applied yet are recorded first
         for symbol in self.store.get_positions():
             if symbol not in busy:
-                self._drop_position(symbol, "the kill switch flattened the account", now)
+                self._drop_position(symbol, "the kill switch flattened the account", now, exit_reason="kill")
         status = self.kill.status() or {}
         marker = f"{status.get('ts')}|{status.get('reason')}"
         if self.store.kv_get(KILL_FLAT_KEY) != marker:
@@ -701,14 +703,57 @@ class Runner:
                 self._alert(text)
         self._unknown_positions &= set(held)
 
-    def _drop_position(self, symbol: str, why: str, now: datetime) -> None:
-        if not self.store.delete_position(symbol):
+    def _drop_position(self, symbol: str, why: str, now: datetime, exit_reason: str = "drift") -> None:
+        """Forget a position the broker no longer holds. Its sell was never seen (a lost response,
+        a manual close), so book an estimated exit at the last price: the daily loss limit and the
+        drawdown kill must see the loss, even if the exact fill price is unknown."""
+        position = self.store.get_positions().get(symbol)
+        if position is None:
             return
+        booked = self._book_estimated_exit(position, exit_reason, now)
+        self.store.delete_position(symbol)
         self.store.kv_set(entry_signal_key(symbol), "")
-        text = f"Drift: dropped the bot's {symbol} position because {why}. Check the broker account."
+        text = f"Drift: dropped the bot's {symbol} position because {why}. " + (
+            f"Booked an estimated exit at {_price(booked.exit_price)} (P&L {_usd(booked.pnl, signed=True)}) so the "
+            "risk limits see it. Check the real fill in the Alpaca account."
+            if booked is not None
+            else "Its price is unknown, so no P&L was booked. Check the broker account."
+        )
         log.error(text)
         self.store.log_event("error", "position_drift", text, ts=now)
         self._alert(text)
+
+    def _book_estimated_exit(self, position: PositionState, exit_reason: str, now: datetime) -> Trade | None:
+        try:
+            price = float(self.broker.last_price(position.symbol))
+        except Exception:
+            log.warning("could not price %s for an estimated exit", position.symbol, exc_info=True)
+            return None
+        if not (math.isfinite(price) and price > 0):
+            return None
+        qty = position.qty
+        fees = self._fee_rate(position.symbol) * qty * (position.entry_price + price)
+        pnl = qty * (price - position.entry_price) - fees
+        trade = Trade(
+            symbol=position.symbol,
+            strategy=position.strategy,
+            entry_ts=position.entry_ts,
+            entry_price=position.entry_price,
+            exit_ts=now,
+            exit_price=price,
+            qty=qty,
+            pnl=pnl,
+            pnl_pct=pnl / (position.entry_price * qty),
+            exit_reason=exit_reason,
+            fees=fees,
+            meta={"estimated": True},
+        )
+        entry_sid = self._entry_signal_id(position.symbol)
+        if not self._trade_recorded(trade):
+            self.store.insert_trade(trade, entry_sid)
+        if entry_sid is not None:
+            self._update_outcome(entry_sid)
+        return trade
 
     def _adopt_external_orders(self, now: datetime) -> None:
         raw = self.store.kv_get(EXTERNAL_ORDERS_KEY)
@@ -893,10 +938,12 @@ class Runner:
         intent = OrderIntent(position.symbol, Side.SELL, position.qty, ref_price, purpose, reason, cid, signal_id)
         self._track(intent, position.strategy, now)
         result = self.gateway.submit(intent)
-        if _never_sent_result(result):
+        if result.status == "refused":
             self._untrack(cid)
             if result.message.startswith(f"no long {position.symbol} position to sell"):
                 self._drop_position(position.symbol, "the broker has no long position to sell", now)
+        # A "rejected" sell without a broker id may still have filled at Alpaca (timeout, reset): it
+        # stays tracked so the next poll adopts the fill and books the trade.
         return result
 
     def _next_client_order_id(self, purpose: OrderPurpose, symbol: str, base_key: str, now: datetime) -> str | None:

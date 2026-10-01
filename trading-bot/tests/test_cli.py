@@ -72,7 +72,7 @@ live_gate: {}
 ENV_KEYS = (
     "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_PAPER", "TYPESAFE_API_KEY", "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_CHAT_ID", "DASHBOARD_USER", "DASHBOARD_PASSWORD", "DASHBOARD_HOST", "DASHBOARD_PORT",
-    "TRADING_MODE", "LIVE_TRADING_ACK", "KILL_SWITCH", "BOT_DATA_DIR",
+    "TRADING_MODE", "LIVE_TRADING_ACK", "KILL_SWITCH", "BOT_DATA_DIR", "HEARTBEAT_URL",
 )  # fmt: skip
 
 
@@ -476,19 +476,66 @@ def test_backtest_refuses_the_yahoo_crypto_spelling(run):
     assert code == 2 and "BTC/USD" in err
 
 
-def test_run_starts_after_a_failed_gate_while_holding_positions(run, monkeypatch):
-    from datetime import datetime, timezone
-
+def _live_env(monkeypatch, run, gate):
     from bot.config import LIVE_ACK_PHRASE
-    from bot.models import PositionState
 
     monkeypatch.setenv("TRADING_MODE", "live")
     monkeypatch.setenv("ALPACA_PAPER", "false")
     monkeypatch.setenv("LIVE_TRADING_ACK", LIVE_ACK_PHRASE)
     run.data_dir.mkdir(parents=True, exist_ok=True)
-    (run.data_dir / "live_gate.json").write_text(json.dumps({"passed": False, "ts": "2026-09-29T00:00:00+00:00"}))
+    (run.data_dir / "live_gate.json").write_text(json.dumps(gate))
+
+
+def test_run_restarts_after_a_failed_gate_once_live_started(run, monkeypatch):
+    from bot.__main__ import LIVE_STARTED_KEY
+
+    _live_env(monkeypatch, run, {"passed": False, "ts": "2026-09-29T00:00:00+00:00"})
     with Store(settings_for(run.data_dir).db_path) as store:
-        store.put_position(PositionState("SPY", "breakout", 2.0, 500.0, datetime(2026, 9, 28, tzinfo=timezone.utc), 480.0))
+        store.kv_set(LIVE_STARTED_KEY, "2026-09-01T00:00:00+00:00")
     code, _, err = run("run", "--once")
     # Past the live guard: it now stops only at the missing Alpaca keys.
     assert code == 2 and "--dry-run" in err and "final-check" not in err
+
+
+def test_paper_positions_do_not_open_a_live_start_without_a_final_check(run, monkeypatch):
+    from datetime import datetime, timezone
+
+    from bot.models import PositionState
+
+    _live_env(monkeypatch, run, {"passed": False, "ts": "2026-09-29T00:00:00+00:00"})
+    with Store(settings_for(run.data_dir).db_path) as store:  # left over from paper trading
+        store.put_position(PositionState("SPY", "breakout", 2.0, 500.0, datetime(2026, 9, 28, tzinfo=timezone.utc), 480.0))
+    code, _, err = run("run", "--once")
+    assert code == 2 and "final check" in err.lower()
+
+
+def test_dry_run_never_pings_the_real_heartbeat(run, monkeypatch):
+    import bot.runner as runner_mod
+
+    pings = []
+    monkeypatch.setenv("HEARTBEAT_URL", "https://hc-ping.example/real-bot")
+    monkeypatch.setattr(runner_mod, "_http_ping", pings.append)
+    code, _, _ = run("run", "--dry-run", "--once")
+    assert code in (0, 1) and pings == []
+
+
+def test_watchdog_exits_even_while_the_log_lock_is_held(monkeypatch):
+    import logging
+    import threading
+    import time as real_time
+
+    from bot import __main__ as cli
+
+    exited = threading.Event()
+    monkeypatch.setattr(cli.os, "_exit", lambda code: exited.set())
+    handler = logging.StreamHandler()
+    logging.getLogger().addHandler(handler)
+    handler.acquire()  # a stalled loop holding the handler lock
+    stop = cli._start_watchdog(types.SimpleNamespace(last_progress=real_time.monotonic() - 1_000), 300, 0.01)
+    try:
+        assert exited.wait(4)
+    finally:
+        stop.set()
+        handler.release()
+        logging.getLogger().removeHandler(handler)
+        real_time.sleep(0.05)

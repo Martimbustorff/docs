@@ -417,12 +417,16 @@ provides `tick()`, which does one poll iteration, and `run_forever()`. On every 
 
 Any exception inside a tick is logged and alerted and never kills the process. One poll counts
 at most once toward `max_consecutive_errors`, because a single outage usually breaks several
-steps. The process restarts safely because the kv markers, the unique constraints and the
+steps. A tick is clean, and pings the heartbeat, only when `RiskManager.errors_total` didn't
+move during it. The process restarts safely because the kv markers, the unique constraints and the
 deterministic `client_order_id` make it idempotent.
 
-An entry whose submit fails without a broker order id (a timeout or a reset) stays tracked: the
-next poll asks the broker for that `client_order_id` and adopts any fill with its stop. Only a
-guard refusal (`refused`) settles the entry as never sent. Fills are routed by purpose: only an
+An order whose submit fails without a broker order id (a timeout or a reset) stays tracked,
+for entries and sells alike: the next poll asks the broker for that `client_order_id` and adopts
+any fill, giving an entry its stop and booking a sell's trade. Only a guard refusal (`refused`)
+settles an order as never sent. When a bot position vanishes without a seen sell (a lost
+response, a manual close), the runner books an estimated exit at the last price, marked
+`drift` or `kill`, so the daily loss limit and the drawdown kill still see the loss. Fills are routed by purpose: only an
 ENTRY fill creates a bot position, so a kill flatten that buys back a short the bot never opened
 is alerted and otherwise ignored. A failed price lookup during an approval doesn't lose the
 approval: the drift check runs again when the order goes out.
@@ -502,10 +506,12 @@ folder (default `results/`), and `--env-file` is the `.env` to load (default `.e
 - `export-report` writes `results/tournament.html`, the `/backtest` view as one standalone page.
 - `backtest` refuses symbols that `check_symbol` rejects, such as Yahoo's `BTC-USD`. Use
   `BTC/USD`.
-- `run` refuses (exit code 2) any paper/live mismatch. In live mode it also refuses when the gate
-  never passed and the bot holds no positions. It starts after a passed but expired gate, or a
-  failed one while the bot holds positions, so a restart keeps protecting open positions while
-  the runner blocks new entries.
+- `run` refuses (exit code 2) any paper/live mismatch. In live mode it refuses a first start
+  without a passed final check. A live start that passes records the kv key `live_started_ts`,
+  which `final-check` never overwrites. After that, or after a gate that once passed, an expired
+  or failed gate doesn't stop a restart: open positions keep their stops while the runner blocks
+  new entries.
+- `run --dry-run` never pings `HEARTBEAT_URL`, so a dry run can't hide a dead live bot.
 - `run --once` runs one tick and exits.
 - With `--dry-run`, the bot uses SimBroker with New York market hours on the cached bars,
   FakeJevClient when no key is set, and ConsoleNotifier. It keeps its own state in

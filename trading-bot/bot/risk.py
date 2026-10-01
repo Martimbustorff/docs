@@ -143,6 +143,7 @@ class RiskManager:
         self._store = store
         self._kill = kill
         self._errors = self._load_errors()
+        self.errors_total = 0  # every error this process counted; never reset (a clean tick needs no new ones)
 
     @property
     def consecutive_errors(self) -> int:
@@ -256,6 +257,7 @@ class RiskManager:
     # ------------------------------------------------------------------ error tracking
 
     def after_error(self) -> None:
+        self.errors_total += 1
         self._errors += 1
         count = self._errors
         if count >= self.cfg.max_consecutive_errors:
