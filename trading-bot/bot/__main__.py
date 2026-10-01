@@ -278,11 +278,12 @@ def _start_watchdog(runner: Any, stall_s: float, interval_s: float = 30.0) -> An
 
 
 def _startup_guard(settings: Settings) -> None:
-    """Refuse a mismatched mode/endpoint, and live mode that never passed the final check.
+    """Refuse a mismatched mode/endpoint, and a live start with nothing to protect that never
+    passed the final check.
 
-    A final check that passed but has since expired does not stop the process: the runner keeps
-    blocking entries every tick, and refusing to start would leave open positions without stops
-    after any restart or reboot.
+    An expired or failed final check does not stop the process when the gate once passed or the
+    bot holds positions: the runner keeps blocking entries every tick, and refusing to start
+    would leave open positions without stops after any restart or reboot.
     """
     from bot.broker import assert_trading_allowed
 
@@ -292,12 +293,19 @@ def _startup_guard(settings: Settings) -> None:
     try:
         assert_trading_allowed(settings, settings.live_gate_path)
     except ConfigError as exc:
-        if not _gate_passed_once(settings.live_gate_path):
+        if not (_gate_passed_once(settings.live_gate_path) or _holds_positions(settings)):
             raise
         log.warning(
             "%s. Starting anyway so stops and exits keep protecting open positions; "
-            "new entries stay blocked until you re-run final-check.", exc,
+            "new entries stay blocked until final-check passes.", exc,
         )
+
+
+def _holds_positions(settings: Settings) -> bool:
+    if not settings.db_path.exists():
+        return False
+    with _store(settings) as store:
+        return bool(store.get_positions())
 
 
 def _gate_passed_once(path: Path) -> bool:

@@ -60,8 +60,9 @@ parameter).
   hint to run `python -m bot fetch-data`.
 - `fetch_daily(symbols, start="2014-09-17") -> dict[str, int]`: downloads data with yfinance
   (mapping BTC/USD to BTC-USD, `auto_adjust=True`), writes the cache, and returns row counts.
-- `alpaca_daily(broker_or_clients, symbol, start, end) -> pd.DataFrame`: the same frame shape,
-  from Alpaca's historical data, used live.
+
+`data.py` serves backtests only. Live bars come only from `Broker.daily_bars` in the same frame
+shape (see `bot/broker.py`).
 
 ### `bot/backtest/engine.py`
 ```python
@@ -117,6 +118,8 @@ regime, per vol regime and per stress window.
 `run_tournament(cfg: StrategyConfig, symbols) -> dict` runs every strategy × every grid point ×
 every symbol on the in-sample and out-of-sample windows. It applies `tournament.filters` to both
 windows. Survivors pass every filter in both windows, where `min_trades` applies per window.
+It refuses to run when any configuration's indicators aren't warm by a window's start. The
+in-sample window starts on 2015-10-14, the first date on which every grid point is warm.
 
 Survivors are ranked by **in-sample** Calmar ratio (CAGR / max DD), then by in-sample win rate.
 The out-of-sample window is only a pass/fail check and never ranks. Ranking on it would turn it
@@ -131,6 +134,14 @@ portfolio backtest of the winners on shared capital, with the total exposure cap
 filters, pass/fail reasons and regime breakdown) and `results/tournament.md`.
 `apply_winners(results, strategy_path)` updates the `assets` in the CONFIG block and rewrites the
 WINNERS and TOURNAMENT sections of `strategy.md`, using `Strategy.describe()`.
+
+It writes through `bot/config.py`:
+- `write_config_block(data, path)` validates the new config first. It re-serialises only the
+  top-level sections whose values changed, so the other sections keep their hand-written text.
+- `replace_section(name, markdown, path)` refuses a body that contains `<!-- BEGIN` or
+  `<!-- END` markers, so generated text can't forge or break the CONFIG block.
+- Both write to a temp file and `os.replace` it, so a crash never leaves `strategy.md`
+  half-written.
 
 `bot/backtest/portfolio.py` provides
 `run_portfolio(bars_by_symbol, strategies_by_symbol, cfg: StrategyConfig, start, end) -> PortfolioResult`.
@@ -158,10 +169,12 @@ Floats are rounded to 4 decimals, `inf` becomes `null`, and dates are ISO string
   }],
   "winners": {"SPY": {"label": "", "strategy": "", "params": {}, "rules": {"entry": "", "exit": "",
                 "stop_loss": "", "take_profit": "", "timeframe": ""}, "score": 0.0}, "BTC/USD": null},
-  "portfolio": {"window": "full|out_of_sample", "metrics": {}, "regimes": {},
+  "portfolio": {"window": "out_of_sample", "metrics": {}, "regimes": {},
                 "kill_switch_would_fire": [{"date": "", "reason": ""}], "daily_loss_limit_hits": 0,
+                "approvals": {"entry_orders": 0, "needing_approval": 0},
                 "equity": [["2022-01-03", 10000.0]]},
-  "winner_equity": {"SPY": [["2014-09-19", 10000.0]]}
+  "portfolio_full": {"window": "full", "...": {}},
+  "winner_equity": {"SPY": [["2015-10-16", 10000.0]]}
 }
 ```
 Equity arrays are downsampled to weekly closes to keep the file small.
@@ -215,7 +228,8 @@ class KillSwitch:
     def is_tripped(self) -> bool          # file exists OR settings.kill_switch
     def status(self) -> dict | None       # {"reason","ts","source"} from the file
     def trip(self, reason: str, source: str) -> None   # atomic write of var/KILL_SWITCH (JSON); idempotent
-    def reset(self, confirm: bool) -> None             # only from CLI; refuses if settings.kill_switch
+    def reset(self, confirm: bool) -> None             # only from CLI; refuses if settings.kill_switch;
+                                                       # records kv kill_switch_reset_ts
 class RiskManager:
     def __init__(self, cfg: RiskConfig, store: Store, kill: KillSwitch): ...
     def size_entry(self, signal: Signal, bot_equity: float) -> float     # qty per the sizing rule, 0 if invalid
@@ -228,9 +242,13 @@ class RiskContext:
     symbol_exposure_usd: float; orders_today: int; now: datetime
 ```
 `check` runs these rules in order. Risk-reducing purposes (`OrderPurpose.increases_risk` is
-False) return ALLOW unless the broker is in live mode without the live gate. For ENTRY:
-1. Kill switch tripped → BLOCK.
-2. `orders_today >= max_orders_per_day` → trip the kill switch and BLOCK.
+False) return ALLOW unless `assert_trading_allowed(..., risk_increasing=False)` fails. That only
+happens when the mode, the endpoint and the acknowledgement don't agree. An expired live gate
+never blocks them. For ENTRY:
+1. Kill switch tripped → BLOCK. Next, `assert_trading_allowed(..., risk_increasing=True)` fails
+   → BLOCK. In live mode, that includes a missing, failed or expired live gate.
+2. `orders_today >= max_orders_per_day` → trip the kill switch and BLOCK. The runner counts
+   `orders_today` from the last kill-switch reset when that is later than the start of the day.
 3. The day's loss ≥ `daily_loss_limit_pct` of `start_of_day_equity` → BLOCK. The block lasts for
    the rest of the New York day.
 4. Position caps (the per-symbol pct, the USD cap, total exposure) → shrink the order through
@@ -253,7 +271,8 @@ class Broker(Protocol):
     def cancel_all(self) -> None
     def close_position(self, symbol: str) -> OrderResult | None
 class AlpacaBroker: ...  # alpaca-py TradingClient(paper=settings.alpaca_paper) + data clients
-class SimBroker: ...     # in-memory; fills market orders at a settable price; used by tests/dry-run
+class SimBroker: ...     # in-memory; fills market orders at a settable price; used by tests/dry-run;
+                         # market_hours=True follows the New York session (dry run)
 class OrderGateway:
     """The ONLY path to broker.submit. Re-checks the kill switch and the live-trading guard
     immediately before every risk-increasing order, dedupes by client_order_id via the store,
@@ -261,14 +280,37 @@ class OrderGateway:
     def __init__(self, broker: Broker, risk: RiskManager, kill: KillSwitch, store: Store,
                  settings: Settings, notifier: Notifier): ...
     def submit(self, intent: OrderIntent) -> OrderResult
-    def flatten_all(self, reason: str) -> list[OrderResult]   # cancel_all + close every bot position
-def assert_trading_allowed(settings: Settings, live_gate_path: Path) -> None
+    def flatten_all(self, reason: str) -> list[OrderResult]   # cancel every open order and close every
+                                                              # position in the ACCOUNT, not only the bot's
+def assert_trading_allowed(settings: Settings, live_gate_path: Path, *,
+                           now: datetime | None = None, risk_increasing: bool = True) -> None
+def with_timeout(client, timeout=HTTP_TIMEOUT)  # gives an alpaca-py client a session with a default timeout
 ```
 The live-trading guard is `assert_trading_allowed`. It raises `ConfigError` unless one of these
 holds:
 - `trading_mode == "paper"` and `alpaca_paper` is True.
 - `trading_mode == "live"`, `alpaca_paper` is False, `live_trading_ack == LIVE_ACK_PHRASE`, and
   `var/live_gate.json` has `passed: true` and is younger than 7 days.
+
+With `risk_increasing=False`, the guard skips only the live gate check. An expired or failed
+final check then blocks new entries but never the stops, exits and kill-switch flattening that
+protect open positions. A mode, endpoint or acknowledgement mismatch still blocks everything,
+because the bot can't tell which account it would sell from. `flatten_all` and
+`RiskManager.check` use `risk_increasing=False` for risk-reducing orders.
+
+`flatten_all` can't tell the bot's positions from anyone else's. The account must be dedicated to
+the bot, in paper and in live. The runner alerts once for every position the bot didn't open.
+
+`AlpacaBroker` gives every alpaca-py client (trading, stock data, crypto data, and news in
+`bot/news.py`) its own `requests` session through `with_timeout`, with a (5 s connect, 30 s read)
+timeout. alpaca-py sets none, so one stalled connection would otherwise freeze the loop.
+
+`AlpacaBroker.daily_bars` returns completed bars only, built to match the backtest data:
+- Stocks use the SIP feed with the request's end at least 16 minutes in the past, which free
+  plans allow. On an `APIError`, it falls back to the IEX feed and logs a warning.
+- Crypto days are built from hourly bars grouped by UTC day, and only fully closed days are
+  returned. A day with fewer than 20 hourly bars logs a warning.
+- `last_price` reads the latest trade: IEX for stocks, Alpaca's crypto feed for crypto.
 
 Alpaca rules:
 - Crypto orders use `time_in_force=GTC` and fractional qty.
@@ -285,13 +327,18 @@ class Notifier(Protocol):
 @dataclass(frozen=True)
 class Command:
     kind: Literal["approve","reject","kill","status","pnl","help","unknown"]; approval_id: int | None
-    chat_id: str; text: str
+    chat_id: str; text: str; message_id: int | None = None   # the approval message a button belongs to
 class TelegramNotifier: ...   # raw Bot API over httpx; long-poll getUpdates with persisted offset
 class ConsoleNotifier: ...    # logs; used when Telegram isn't configured
 ```
 - The notifier ignores and logs every update whose chat id isn't `TELEGRAM_CHAT_ID`.
 - Inline keyboard `callback_data` values are `approve:<id>` and `reject:<id>`. The notifier
-  answers each callback query and edits the message to show the decision.
+  answers each callback query with "Approve received" or "Reject received" and removes the
+  buttons. The runner decides and confirms the outcome in a new message, because expiry, price
+  drift and risk can still refuse it.
+- A button press carries its message's `message_id`. The runner acts on it only when that id
+  matches the one stored for the approval, so a stale button (for example from before a database
+  reset) can never decide a newer request that reuses the id.
 - It escapes Markdown or sends plain text, retries 429s and 5xx responses with backoff, and never
   logs the token.
 
@@ -329,7 +376,10 @@ Typed helpers include:
 - `create_approval(signal_id, notional, expires_ts) -> int`, `set_approval(id, status)`,
   `pending_approvals()`.
 - `log_event(level, kind, message, data=None)`, `record_equity(...)`, `kv_get` and `kv_set`.
-- `orders_today(now) -> int` counts risk-increasing orders on the New York day.
+- `orders_today(now, since=None) -> int` counts ENTRY orders created on the New York day that
+  contains `now`, starting at `since` when that is later. The runner passes the kill-switch reset
+  time (kv `kill_switch_reset_ts`), so a same-day resume starts a fresh count instead of
+  re-tripping the order cap.
 - `realized_pnl_since(ts)`, `trades(since=None)`, `signals(limit, offset)` and
   `jev_stats(since=None) -> {"n","avg_latency_ms","avg_cost_usd","total_cost_usd"}`.
 
@@ -338,10 +388,16 @@ Timestamps are stored as ISO-8601 UTC strings. The store never stores secrets.
 ### `bot/runner.py`
 `Runner(settings, cfg, broker, gateway, risk, kill, jev_gate, notifier, store, clock=utcnow)`
 provides `tick()`, which does one poll iteration, and `run_forever()`. On every tick it:
-1. Runs `assert_trading_allowed`. If the kill switch is tripped, it makes sure the bot is flat
-   (once), then sleeps.
+1. Writes the heartbeat (kv `runner_heartbeat`) and runs `assert_trading_allowed` twice. A
+   failure with `risk_increasing=False` blocks every order, exits included. A failure with
+   `risk_increasing=True`, such as an expired live gate, blocks only new entries. It alerts at
+   most once a day while blocked, and warns 48 hours before the live gate expires. While the kill
+   switch is tripped (with `risk.kill_switch_flatten`, the default), it calls `flatten_all` on
+   every tick until the account is flat, expires pending approvals and drops queued orders. It
+   still reconciles, handles commands and keeps the books, but skips steps 4 and 5.
 2. Reconciles positions and orders with the broker. It detects fills and records trades and
-   outcomes, and alerts on every fill.
+   outcomes, and alerts on every fill. It alerts once for every position in the account that the
+   bot didn't open, because the kill switch would sell it.
 3. Handles Telegram commands and approval callbacks. Expired approvals become `expired`. Approved
    entries are re-priced and skipped if the price has drifted more than
    `approval_max_price_drift_pct`.
@@ -352,13 +408,29 @@ provides `tick()`, which does one poll iteration, and `run_forever()`. On every 
    logic if it is flat. An entry goes through `jev_gate.evaluate` (with headlines from `news`),
    then `risk.size_entry`, then `risk.check`. Depending on the verdict, the order is queued, sent
    for approval, or blocked. Queued orders execute in the next execution window: at once for
-   crypto, and at the open plus `stock_entry_delay_minutes` for stocks.
+   crypto, and at the open plus `stock_entry_delay_minutes` for stocks. An entry expires when its
+   window closes (`EXECUTION_WINDOW`, 30 minutes): 10:00 New York time for stocks. Approvals
+   expire after `approval_timeout_minutes` for crypto, and when the window closes for stocks. The
+   runner never requests an approval, or sends an entry, after the window has closed.
 6. Checks the daily loss limit, the drawdown kill and the error counters, records equity every 15
    minutes, and sends the daily report at `execution.daily_report_time`.
 
-Any exception inside a tick is logged and alerted, counted by `risk.after_error()`, and never
-kills the process. The process restarts safely because the kv markers, the unique constraints
-and the deterministic `client_order_id` make it idempotent.
+Any exception inside a tick is logged and alerted and never kills the process. One poll counts
+at most once toward `max_consecutive_errors`, because a single outage usually breaks several
+steps. The process restarts safely because the kv markers, the unique constraints and the
+deterministic `client_order_id` make it idempotent.
+
+An entry whose submit fails without a broker order id (a timeout or a reset) stays tracked: the
+next poll asks the broker for that `client_order_id` and adopts any fill with its stop. Only a
+guard refusal (`refused`) settles the entry as never sent. Fills are routed by purpose: only an
+ENTRY fill creates a bot position, so a kill flatten that buys back a short the bot never opened
+is alerted and otherwise ignored. A failed price lookup during an approval doesn't lose the
+approval: the drift check runs again when the order goes out.
+
+`run_forever` sets `runner.last_progress` on every loop iteration. `python -m bot run` starts a
+watchdog thread that exits the process (exit code 1) when `last_progress` is older than
+max(300 s, 5 × `poll_seconds`). Docker's restart policy then brings the bot back, so a hung call
+can't silently disable stops, exits and `/kill`. `run --once` runs one tick without a watchdog.
 
 ### `bot/report.py`
 `daily_report(store, settings, cfg, day) -> str` returns Markdown with:
@@ -371,14 +443,22 @@ and the deterministic `client_order_id` make it idempotent.
 It saves to `var/reports/YYYY-MM-DD.md`. The runner sends it to Telegram.
 
 ### `bot/live_gate.py`
-- `kill_switch_drill(settings, cfg) -> dict` runs against SimBroker, or against the Alpaca paper
-  account with `--paper`. It opens a small position, trips the switch, and asserts:
+- `kill_switch_drill(settings, cfg, paper=False) -> dict` runs against SimBroker, or against the
+  Alpaca paper account with `--paper`. It keeps its state in `var/drill/<timestamp>/`, with its
+  own kill switch, so it never trips the bot's. It opens a small BTC/USD position, trips its kill
+  switch, and asserts:
   - Orders are cancelled.
   - Positions are flat.
   - A new ENTRY is refused.
   - An alert was sent.
+  - Exits are still allowed.
+  - The bot's own kill switch file is unchanged.
 
-  It writes `var/kill_switch_drill.json` as `{passed, ts, steps}`.
+  The `--paper` drill refuses unless `TRADING_MODE=paper`, `ALPACA_PAPER=true` and
+  `KILL_SWITCH` is unset, the bot's store holds no positions, its heartbeat is at least 5 minutes
+  old, and the paper account holds no positions. Its flatten closes every position in the account.
+  The drill writes `var/kill_switch_drill.json` as `{passed, ts, mode, state_dir, steps}`. A
+  refusal writes nothing.
 - `final_check(settings, cfg) -> dict` answers:
   - Does paper match the backtest? It replays the backtest over the paper period on the same
     bars. It computes the signal match rate (before Jev and risk), the fill slippage versus the
@@ -394,7 +474,8 @@ It saves to `var/reports/YYYY-MM-DD.md`. The runner sends it to Telegram.
 ### `bot/dashboard/`
 A FastAPI app, `create_app(settings, cfg, store) -> FastAPI`, with Jinja2 templates and no CDN
 assets. Charts are server-rendered inline SVG. HTTP Basic auth uses `DASHBOARD_USER` and
-`DASHBOARD_PASSWORD`; without a password it refuses to start unless bound to 127.0.0.1. The app is
+`DASHBOARD_PASSWORD`; without a password it refuses to start unless bound to 127.0.0.1, and it serves
+only loopback clients that use a loopback host name, which blocks DNS rebinding. The app is
 read-only. Pages:
 - `/`: mode, kill switch, equity (bot vs. backtest expectation), open positions and today's P&L.
 - `/signals`: every signal with its Jev probabilities, gate, risk and approval status, and result.
@@ -405,19 +486,37 @@ read-only. Pages:
 - `/healthz`.
 
 ### `bot/__main__.py` (CLI)
-`python -m bot <command>`:
-- `fetch-data`, `backtest --symbol SPY --strategy trend [--params k=v ...]`, `tournament [--apply]`
-- `run [--dry-run]`, `dashboard`, `report [--day YYYY-MM-DD]`, `status`
+`python -m bot [--strategy PATH] [--results-dir PATH] [--env-file PATH] <command>`:
+- `fetch-data`, `tournament [--apply]`, `export-report`
+- `backtest --symbol SPY --strategy trend [--params k=v ...] [--start YYYY-MM-DD] [--end YYYY-MM-DD]`
+- `run [--dry-run] [--once]`, `dashboard`, `report [--day YYYY-MM-DD]`, `status`
 - `kill [--reason ...]`, `resume --confirm`, `drill-kill-switch [--paper]`, `final-check`, `jev-ping`
 
-With `--dry-run`, the bot uses SimBroker, FakeJevClient when no key is set, and ConsoleNotifier.
+Global options go before the command. `--strategy PATH` is the `strategy.md` file to read, not
+the strategy name that `backtest --strategy` takes. `--results-dir` is the tournament output
+folder (default `results/`), and `--env-file` is the `.env` to load (default `.env`).
+
+- `export-report` writes `results/tournament.html`, the `/backtest` view as one standalone page.
+- `backtest` refuses symbols that `check_symbol` rejects, such as Yahoo's `BTC-USD`. Use
+  `BTC/USD`.
+- `run` refuses (exit code 2) any paper/live mismatch. In live mode it also refuses when the gate
+  never passed and the bot holds no positions. It starts after a passed but expired gate, or a
+  failed one while the bot holds positions, so a restart keeps protecting open positions while
+  the runner blocks new entries.
+- `run --once` runs one tick and exits.
+- With `--dry-run`, the bot uses SimBroker with New York market hours on the cached bars,
+  FakeJevClient when no key is set, and ConsoleNotifier. It keeps its own state in
+  `<data_dir>/dry-run/`. To watch it, run `BOT_DATA_DIR=var/dry-run python -m bot dashboard`.
+- `kill` trips the kill switch and, when Alpaca keys are set, calls `flatten_all` at once.
+- Exit codes: 0 success, 1 failure, 2 refused or configuration error (`Refused: ...` on stderr).
 
 ## Security invariants (reviewers check these)
 
 1. `OrderGateway.submit` is the only caller of `Broker.submit`.
 2. Every risk-increasing order passes through all of these, in this order: the kill switch, then
    `assert_trading_allowed`, then `RiskManager.check`, then approval if needed.
-3. Nothing gates an exit, except the live guard, which blocks everything when misconfigured.
+3. Nothing gates an exit, except the live guard on a mode, endpoint or acknowledgement mismatch,
+   which blocks everything. An expired or failed live gate blocks new entries only.
 4. Any Jev error blocks the entry.
 5. Secrets are never logged, rendered or stored in SQLite.
 6. Only the configured chat id can issue Telegram commands. `/kill` works from Telegram. Resume

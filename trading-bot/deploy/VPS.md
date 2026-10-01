@@ -20,7 +20,7 @@ if yours differ. `SERVER_IP` stands for your server's public IP address.
 
 | Where | What | Why |
 |---|---|---|
-| Docker: `bot` | `python -m bot run` | The live loop. It restarts on crashes and at boot. |
+| Docker: `bot` | `python -m bot run` | The live loop. It restarts on crashes, when its loop stalls, and at boot. |
 | Docker: `dashboard` | `python -m bot dashboard` | The read-only web UI, published on `127.0.0.1:8080` only. |
 | Host: Python virtual environment | `fetch-data`, `tournament`, `pytest`, `drill-kill-switch`, `final-check` | The tournament and the final check write `strategy.md` and `results/`, which the containers mount read-only. The image also ships without test dependencies. |
 | Host: cron | `deploy/backup.sh` | Nightly copies of `var/`. |
@@ -31,7 +31,8 @@ Both sides share `var/` and `data/` in the repository folder.
 
 You need:
 
-- An Alpaca account with **paper trading** API keys.
+- A paper account that only the bot trades, with its own API keys. The kill switch cancels every
+  open order and closes every position in the Alpaca account, not only the bot's.
 - A TypeSafe AI API key for Jev. Without it, the bot blocks every entry, because Jev fails closed.
 - Telegram on your phone. You create the bot in [TELEGRAM.md](TELEGRAM.md).
 - A terminal with `ssh` on your own computer.
@@ -175,7 +176,8 @@ EOF
 
 At 04:30 UTC the US stock market is closed, and the 00:00 UTC crypto bar is long done. The
 bot comes back on its own after the reboot. It checks no BTC/USD stops during the minute or two
-the server is down.
+the server is down. In live mode, it also comes back after the live gate has expired. It then
+blocks new entries, but stops and exits keep protecting open positions.
 
 ## 7. Install fail2ban
 
@@ -290,7 +292,7 @@ Fill in these values:
 
 | Variable | Value |
 |---|---|
-| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Your Alpaca **paper** keys. |
+| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Your Alpaca **paper** keys, for an account that only the bot trades. |
 | `TYPESAFE_API_KEY` | Your TypeSafe AI key for Jev. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Follow [TELEGRAM.md](TELEGRAM.md). |
 | `DASHBOARD_PASSWORD` | The output of `openssl rand -hex 24`. The dashboard refuses to start in Docker without it. |
@@ -346,33 +348,44 @@ Also read the **Winners** section of `strategy.md`. An asset with no surviving s
 disabled, and the bot won't trade it. That's the risk filter doing its job.
 
 To watch the loop without a broker, run `python -m bot run --dry-run` for a minute. It uses a
-simulated broker and logs alerts to the console. Press **Ctrl+C** to stop it.
+simulated broker and logs alerts to the console. It keeps its own state in `var/dry-run/`, so it
+never touches the real bot's database or kill switch. Press **Ctrl+C** to stop it.
 
 > Never run `python -m bot run` without `--dry-run` on the host while the containers run. Two
 > bots would trade the same account.
 
 ## 14. Run the kill-switch drill
 
-The drill opens a small position, trips the kill switch, and checks that the bot cancels
-orders, goes flat, refuses new entries and sends an alert.
+The drill opens a small BTC/USD position, trips a kill switch, and checks that the bot cancels
+orders, goes flat, refuses new entries, still allows exits and sends an alert. It uses its own
+state folder and its own kill switch, so it never trips the bot's kill switch.
+
+Run the simulated drill first. It can run at any time:
 
 ```bash
 python -m bot drill-kill-switch
-python -m bot drill-kill-switch --paper
-python -m bot status
 ```
 
-- The first run uses a simulated broker.
-- The second run uses your real Alpaca paper account.
-- Both write `var/kill_switch_drill.json`.
+Then drill your real Alpaca paper account. Its flatten cancels every open order and closes every
+position in the account, so it refuses to run while the bot runs or the account holds positions.
 
-If `status` still shows the kill switch as tripped, clear it with
-`python -m bot resume --confirm`.
+1. If the bot runs, stop it with `docker compose stop bot`. Then wait 5 minutes. The drill
+   refuses while the bot's heartbeat is fresh.
+2. In the Alpaca dashboard, make sure the paper account holds no positions.
+3. Run the drill, then check the bot's state:
 
-The final check needs a drill younger than 30 days, so repeat the drill every month. Once the
-bot runs, stop it first with `docker compose stop bot`, and start it afterwards with
-`docker compose start bot`. The `--paper` drill closes bot positions in your paper account, so
-run it only while the bot holds no positions.
+   ```bash
+   python -m bot drill-kill-switch --paper
+   python -m bot status
+   ```
+
+4. If you stopped the bot, start it again with `docker compose start bot`.
+
+Each drill overwrites `var/kill_switch_drill.json`, so run the `--paper` drill last. If `status`
+shows the kill switch as tripped, the bot tripped it, not the drill. Find out why before you
+resume.
+
+The final check needs a drill younger than 30 days, so repeat the `--paper` drill every month.
 
 ## 15. Start the bot
 
@@ -421,7 +434,8 @@ Use the first option that works:
    `docker compose exec bot python -m bot kill --reason "manual stop"`.
 3. In the Alpaca dashboard, close all positions and cancel all open orders.
 
-The kill switch cancels the bot's orders, closes its positions and blocks new entries.
+The kill switch cancels every open order and closes every position in the Alpaca account, not
+only the bot's. Then it blocks new entries.
 
 > **Stopping the containers doesn't close positions.** The bot checks stops itself and sends a
 > market exit when the price crosses a stop. No stop orders rest at Alpaca. While the bot is
@@ -549,16 +563,26 @@ every item below is true.
 
 Only then do all of these, together:
 
-- Create live Alpaca keys with trade permission only.
+- Create live Alpaca keys, with trade permission only, for an account that holds nothing else.
+  The kill switch closes every position in the account.
 - In `.env`, set `ALPACA_PAPER=false` and `TRADING_MODE=live`.
 - Set `LIVE_TRADING_ACK` to the exact `LIVE_ACK_PHRASE` from `bot/config.py`.
 - Consider a smaller `risk.capital_usd` in `strategy.md` for the first weeks.
 - Run `docker compose up -d --force-recreate`.
 
-The live gate expires after 7 days. Once `var/live_gate.json` is older than that, the guard
-blocks new entries. Stops, exits and the kill switch still work, so open positions stay
-protected. Re-run `final-check` at least weekly while you trade live, and the drill at least
-monthly.
+`python -m bot run` refuses to start when `TRADING_MODE`, `ALPACA_PAPER` and `LIVE_TRADING_ACK`
+don't agree. In live mode, it also refuses when `var/live_gate.json` doesn't record a passed
+final check.
+
+The live gate expires after 7 days. Once a passed `var/live_gate.json` is older than that, the
+bot blocks new entries. Stops, exits and the kill switch keep working, so open positions stay
+protected. The bot keeps running, and it restarts safely after a crash or a reboot.
+
+Re-run `final-check` at least weekly while you trade live. A failed run overwrites
+`var/live_gate.json` and blocks new entries until a later run passes. While the bot holds
+positions it still starts after a crash or a reboot, so stops and exits keep protecting them.
+Run `drill-kill-switch` at least monthly. The `--paper` drill refuses to run in live mode, so use
+the simulated drill.
 
 ## Troubleshooting
 
@@ -567,8 +591,11 @@ monthly.
 | `dashboard` keeps restarting | `DASHBOARD_PASSWORD` is empty, so the dashboard refuses to listen on `0.0.0.0`. Set it in `.env`, then run `docker compose up -d`. |
 | `PermissionError` or `unable to open database file` for `/app/var` | Docker created `var/` or `data/` as root, or `APP_UID`/`APP_GID` don't match your user. Run `sudo chown -R "$(id -u):$(id -g)" var data results`, fix `APP_UID`/`APP_GID` in `.env`, then run `docker compose build && docker compose up -d`. |
 | `env file .env not found` | Run `cp .env.example .env && chmod 600 .env` in `~/trading-bot`. |
-| `ConfigError` in the bot log | The CONFIG block in `strategy.md` is missing or invalid. Run `python -m bot status` on the host to see the error, and `git diff strategy.md` to see what changed. |
-| The bot runs but never trades | Check `python -m bot status`. Common reasons: every asset is disabled (no tournament winner), the kill switch is tripped, the daily loss limit hit, Jev vetoed the entry, or an approval expired. The dashboard's `/signals` page shows the reason for each signal. |
+| The `bot` container keeps restarting, and `docker compose logs bot` shows `Refused:` followed by a message about `strategy.md` or the CONFIG block, for example `Refused: invalid CONFIG block in /app/strategy.md: ...` | The CONFIG block in `strategy.md` is missing or invalid. Run `python -m bot status` on the host to see the error, and `git diff strategy.md` to see what changed. |
+| The `bot` container keeps restarting, and `docker compose logs bot` shows `Refused:` followed by a message about `TRADING_MODE`, `ALPACA_PAPER`, `LIVE_TRADING_ACK` or `live_gate.json` | The live-trading guard refuses the configuration. For paper, set `TRADING_MODE=paper` and `ALPACA_PAPER=true`. For live, follow [Going live later](#22-going-live-later), including a passed final check. Then run `docker compose up -d`. |
+| The bot runs but never trades | Check `python -m bot status`. Common reasons: every asset is disabled (no tournament winner), the kill switch is tripped, the daily loss limit hit, Jev vetoed the entry, an approval expired, or the live gate expired in live mode. The dashboard's `/signals` page shows the reason for each signal. |
+| `docker compose logs bot` shows `the runner loop made no progress for 300s; exiting so it restarts` | The loop hung, for example on a stalled network call. The watchdog exited the process, and Docker restarted it. If it keeps happening, check the server's network and Alpaca's status page. |
+| `docker compose logs bot` shows `SIP bars for SPY unavailable` and `falling back to IEX` | Your Alpaca plan can't read SIP bars right now. The bot uses IEX bars instead, which can differ from the backtest data, so signals can differ too. |
 | Every entry says `jev error` | Jev fails closed. Run `python -m bot jev-ping`, then check `TYPESAFE_API_KEY`. |
 | Alpaca returns `401` or `403` | The keys don't match the account type. Paper keys need `ALPACA_PAPER=true`. |
 | No Telegram messages | See the troubleshooting table in [TELEGRAM.md](TELEGRAM.md). |

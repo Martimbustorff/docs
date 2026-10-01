@@ -14,16 +14,16 @@ These rules exist before any strategy runs. The code enforces them. They are not
 
 | Rule | Value | What happens |
 |---|---|---|
-| Capital the bot manages | $10,000 | Sizing and limits use this slice of the paper account, not the full balance. |
+| Capital the bot manages | $10,000 | Sizing and limits use this slice of the account, not the full balance. The account itself must hold only the bot's trades, because the kill switch closes every position in it. |
 | Risk per trade | 1% of capital | Position size = risk ÷ distance from entry to stop. |
 | Max position size | 33% of capital, never above $3,500 per symbol | Larger orders are shrunk to fit. |
 | Max total exposure | 100% of capital | No leverage, no shorting. The bot is long-only. |
 | Daily loss limit | 2% of start-of-day equity | New entries are blocked until the next New York trading day. Exits still run. |
 | Max drawdown | 15% from peak bot equity | The kill switch trips. |
-| Kill switch | Telegram `/kill`, `KILL_SWITCH=1`, the `var/KILL_SWITCH` file, 10 orders in a day, or 5 errors in a row | The bot cancels all open orders, closes every bot position and stops trading. Only `python -m bot resume --confirm` on the server clears it. |
-| Manual approval | Any entry order above $1,000 | The bot sends a Telegram message with **Approve** and **Reject** buttons. With no answer in 12 hours, the order is rejected. If an approved order's price has moved more than 2% since the signal, the order is skipped. |
+| Kill switch | Telegram `/kill`, `KILL_SWITCH=1`, the `var/KILL_SWITCH` file, 10 orders in a day, or 5 errors in a row | The bot cancels every open order and closes every position in the Alpaca account, not only its own, then stops opening new ones. Only `python -m bot resume --confirm` on the server clears it. |
+| Manual approval | Any entry order above $1,000 | The bot sends a Telegram message with **Approve** and **Reject** buttons. With no answer by the deadline in the message, the entry expires: 12 hours for BTC/USD, and 10:00 New York time on the next trading day for SPY and QQQ. If an approved order's price has moved more than 2% since the signal, the order is skipped. |
 | Exits | Always allowed | Stops, exits and kill-switch flattening never wait for approval, Jev or the daily loss limit. |
-| Paper first | `TRADING_MODE=paper` | Live mode needs a passed final check, a recent kill-switch drill, and a typed acknowledgement. See **Final check**. |
+| Paper first | `TRADING_MODE=paper` | Live mode needs a passed final check, a recent kill-switch drill, and a typed acknowledgement. See **Final check**. Once the final check is older than 7 days, new entries stop, but stops, exits and the kill switch keep working. |
 
 ### Keys and credentials
 

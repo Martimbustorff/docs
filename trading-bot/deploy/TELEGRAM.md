@@ -30,7 +30,7 @@ Lock the bot down while you're still talking to BotFather:
    ```text
    status - Mode, kill switch, positions and today's P&L
    pnl - Realized and unrealized P&L
-   kill - Trip the kill switch and flatten all bot positions
+   kill - Trip the kill switch and close every position in the account
    help - List the commands
    ```
 
@@ -121,7 +121,7 @@ Only the chat whose id is in `TELEGRAM_CHAT_ID` can use these.
 |---|---|
 | `/status` | Shows the trading mode, the kill-switch state, open positions and today's P&L. |
 | `/pnl` | Shows realized and unrealized P&L. |
-| `/kill` | Trips the kill switch. The bot cancels its open orders, closes every bot position and stops opening new ones. |
+| `/kill` | Trips the kill switch. The bot cancels every open order and closes every position in the Alpaca account, not only its own. Then it stops opening new ones. Use an account that only the bot trades. |
 | `/help` | Lists the commands. |
 
 There's no `/resume`. You clear the kill switch only on the server, on purpose:
@@ -138,15 +138,17 @@ Any entry order above $1,000 (`risk.approval_threshold_usd` in `strategy.md`) wa
 
 1. The bot sends a message about the trade it wants, with **Approve** and **Reject** buttons.
 2. Tap one button. The message updates to show your decision.
-3. If you don't answer within 12 hours (`risk.approval_timeout_minutes`), the entry expires and
-   the bot doesn't trade it.
+3. If you don't answer by the deadline shown in the message, the entry expires and the bot
+   doesn't trade it. The deadline is 12 hours for BTC/USD (`risk.approval_timeout_minutes`), and
+   10:00 New York time on the next trading day for SPY and QQQ.
 
 An approval doesn't bypass any other check:
 
 - The bot re-prices an approved entry. If the price has moved more than 2%
   (`risk.approval_max_price_drift_pct`) since the signal, it skips the trade.
-- An approved entry goes out in the next execution window. That's right away for BTC/USD, and one
-  minute after the open for SPY and QQQ.
+- An approved entry goes out in the next execution window. That's right away for BTC/USD, and
+  between 9:31 and 10:00 New York time for SPY and QQQ. The bot never sends an entry after its
+  window has closed.
 - The kill switch and the risk limits run again right before the order is sent.
 
 Exits never wait for approval. Stops, strategy exits and kill-switch flattening always run.

@@ -474,3 +474,21 @@ def test_watchdog_stays_quiet_while_the_loop_progresses(monkeypatch):
 def test_backtest_refuses_the_yahoo_crypto_spelling(run):
     code, _, err = run("backtest", "--symbol", "BTC-USD", "--strategy", "momentum")
     assert code == 2 and "BTC/USD" in err
+
+
+def test_run_starts_after_a_failed_gate_while_holding_positions(run, monkeypatch):
+    from datetime import datetime, timezone
+
+    from bot.config import LIVE_ACK_PHRASE
+    from bot.models import PositionState
+
+    monkeypatch.setenv("TRADING_MODE", "live")
+    monkeypatch.setenv("ALPACA_PAPER", "false")
+    monkeypatch.setenv("LIVE_TRADING_ACK", LIVE_ACK_PHRASE)
+    run.data_dir.mkdir(parents=True, exist_ok=True)
+    (run.data_dir / "live_gate.json").write_text(json.dumps({"passed": False, "ts": "2026-09-29T00:00:00+00:00"}))
+    with Store(settings_for(run.data_dir).db_path) as store:
+        store.put_position(PositionState("SPY", "breakout", 2.0, 500.0, datetime(2026, 9, 28, tzinfo=timezone.utc), 480.0))
+    code, _, err = run("run", "--once")
+    # Past the live guard: it now stops only at the missing Alpaca keys.
+    assert code == 2 and "--dry-run" in err and "final-check" not in err
