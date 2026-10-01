@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>{{ page_title }} · Trading bot</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <div class="wrap topbar">
+    <span class="brand">Trading bot</span>
+    <span class="badge mode-{{ mode.css }}" title="{{ mode.endpoint }}">{{ mode.label }}</span>
+    {% if kill_tripped %}<a class="badge bad" href="/">Kill switch tripped</a>{% endif %}
+  </div>
+  <nav class="wrap" aria-label="Dashboard pages">
+    <ul class="nav">
+    {% for href, label in nav %}
+      <li><a href="{{ href }}"{% if href == active %} aria-current="page"{% endif %}>{{ label }}</a></li>
+    {% endfor %}
+    </ul>
+  </nav>
+</header>
+<main id="main" class="wrap">
+<h1>{{ page_title }}</h1>
+{% block content %}{% endblock %}
+</main>
+<footer class="wrap site-footer">
+  <p>Read-only view. Times are New York time unless marked. Paper-trading research project, not financial advice.</p>
+</footer>
+</body>
+</html>

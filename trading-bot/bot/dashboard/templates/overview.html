@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<section class="cards" aria-label="Status">
+  <article class="card">
+    <h2>Mode</h2>
+    <p class="stat"><span class="badge mode-{{ mode.css }}">{{ mode.label }}</span></p>
+    <p>{{ mode.endpoint }}. Jev mode: <strong>{{ mode.jev_mode }}</strong>.</p>
+    <p class="{{ mode.guard }}-text">{{ mode.guard_note }}</p>
+  </article>
+  <article class="card">
+    <h2>Kill switch</h2>
+    {% if o.kill.tripped %}
+    <p class="stat bad-text">&#9632; Tripped</p>
+    <p>Reason: {{ o.kill.reason or "none given" }}</p>
+    <p class="muted">Source: {{ o.kill.source or "unknown" }}{% if o.kill.ts %}, at {{ o.kill.ts | ts }}{% endif %}. Only <code>python -m bot resume --confirm</code> on the server clears it.</p>
+    {% else %}
+    <p class="stat ok-text">&#10003; Off</p>
+    <p class="muted">Trips on Telegram /kill, KILL_SWITCH=1, the var/KILL_SWITCH file, {{ o.risk.max_orders }} entry orders in a day, {{ o.risk.max_errors }} errors in a row or a {{ o.risk.kill_pct }}% drawdown.</p>
+    {% endif %}
+  </article>
+  <article class="card">
+    <h2>Last heartbeat</h2>
+    <p class="stat {{ 'warn-text' if o.heartbeat.stale else '' }}">{% if o.heartbeat.stale %}&#9888; {% endif %}{{ o.heartbeat.age }}</p>
+    <p class="muted">{% if o.heartbeat.ts %}From the {{ o.heartbeat.source }} ({{ o.heartbeat.ts | ts }}).{% else %}No runner heartbeat or equity snapshot yet.{% endif %}{% if o.heartbeat.stale %} The bot may be down: while it is, nothing watches the stops.{% endif %}</p>
+  </article>
+  <article class="card">
+    <h2>Today's P&amp;L</h2>
+    <p class="stat {{ o.pnl.equity_change_today | signed_class }}">{{ o.pnl.equity_change_today | usd(signed=true) }}</p>
+    <p>Bot equity change on {{ o.pnl.day }} (New York day).</p>
+    <dl class="kv">
+      <dt>Realized today</dt><dd class="{{ o.pnl.realized_today | signed_class }}">{{ o.pnl.realized_today | usd(signed=true) }}</dd>
+      <dt>Unrealized</dt><dd class="{{ o.pnl.unrealized | signed_class }}">{{ o.pnl.unrealized | usd(signed=true) }}</dd>
+      <dt>Bot equity</dt><dd>{{ o.pnl.bot_equity | usd }} <span class="muted">of {{ o.capital | usd }} capital</span></dd>
+      <dt>Exposure</dt><dd>{{ o.pnl.exposure | usd }}</dd>
+    </dl>
+    {% if o.pnl.as_of %}<p class="muted">Equity as of {{ o.pnl.as_of | ts }}.</p>{% endif %}
+  </article>
+  <article class="card">
+    <h2>Risk limits</h2>
+    <dl class="kv">
+      <dt>Drawdown from peak</dt><dd>{{ o.risk.drawdown_pct | pct }} <span class="muted">(kill at {{ o.risk.kill_pct }}%)</span></dd>
+      <dt>Daily loss limit</dt><dd>{% if o.risk.daily_block %}<span class="bad-text">&#9888; hit: entries blocked until tomorrow</span>{% else %}not hit <span class="muted">({{ o.risk.daily_limit_pct }}%)</span>{% endif %}</dd>
+      <dt>Entry orders today</dt><dd>{{ o.risk.orders_today }} of {{ o.risk.max_orders }}</dd>
+      <dt>Errors in a row</dt><dd>{{ o.risk.errors }} of {{ o.risk.max_errors }}</dd>
+    </dl>
+  </article>
+</section>
+
+<section aria-labelledby="equity-h">
+  <h2 id="equity-h">Equity</h2>
+  <figure class="chart-box">
+    {{ o.equity_chart }}
+    <figcaption>{{ o.equity_note }}</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="positions-h">
+  <h2 id="positions-h">Open positions</h2>
+  {% if o.positions_error %}<p class="bad-text">{{ o.positions_error }}</p>{% endif %}
+  {% if o.positions %}
+  {% call m.scroll_table("Open positions") %}
+  <table>
+    <thead><tr>
+      <th scope="col">Symbol</th><th scope="col">Strategy</th><th scope="col" class="num">Qty</th>
+      <th scope="col" class="num">Entry</th><th scope="col" class="num">Last price</th><th scope="col" class="num">Stop</th>
+      <th scope="col" class="num">Distance to stop</th><th scope="col" class="num">At risk to stop</th>
+      <th scope="col" class="num">Take profit</th><th scope="col" class="num">Bars held</th><th scope="col">Entered</th>
+    </tr></thead>
+    <tbody>
+    {% for p in o.positions %}
+      <tr>
+        <th scope="row">{{ p.symbol }}</th><td>{{ p.strategy }}</td><td class="num">{{ p.qty | qty }}</td>
+        <td class="num">{{ p.entry_price | price }}</td>
+        <td class="num">{% if p.mark is none %}<span class="muted">n/a</span>{% else %}{{ p.mark | price }}{% if p.mark_ts %}<br><span class="muted">{{ p.mark_ts | ts }}</span>{% endif %}{% endif %}</td>
+        <td class="num">{{ p.stop_price | price }}</td>
+        <td class="num">{{ p.distance_pct | pct }}{% if p.from_entry %}<sup><a href="#from-entry">*</a></sup>{% endif %}</td>
+        <td class="num">{{ p.at_risk | usd }}</td>
+        <td class="num">{{ p.take_profit | price if p.take_profit is not none else "none" }}</td>
+        <td class="num">{{ p.bars_held }}</td><td class="nowrap">{{ p.entry_ts | ts }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+  {% if o.positions | selectattr("from_entry") | list %}<p id="from-entry" class="muted">* No recent price from the runner: measured from the entry price.</p>{% endif %}
+  {% else %}
+  <p class="empty-state">No open positions.</p>
+  {% endif %}
+</section>
+
+<section aria-labelledby="approvals-h">
+  <h2 id="approvals-h">Pending approvals</h2>
+  {% if o.approvals %}
+  {% call m.scroll_table("Pending approvals") %}
+  <table>
+    <thead><tr><th scope="col">Id</th><th scope="col">Symbol</th><th scope="col">Strategy</th><th scope="col" class="num">Notional</th><th scope="col">Requested</th><th scope="col">Expires</th></tr></thead>
+    <tbody>
+    {% for a in o.approvals %}
+      <tr><th scope="row">{{ a.id }}</th><td>{{ a.symbol }}</td><td>{{ a.strategy }}</td><td class="num">{{ a.notional | usd }}</td><td class="nowrap">{{ a.requested | ts }}</td><td class="nowrap">{{ a.expires | ts }} <span class="muted">({{ a.expires_in }})</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+  <p class="muted">Approve or reject on Telegram. This dashboard is read-only.</p>
+  {% else %}
+  <p class="empty-state">No approvals waiting.</p>
+  {% endif %}
+</section>
+
+<section aria-labelledby="events-h">
+  <h2 id="events-h">Recent events</h2>
+  {% if o.events %}
+  {% call m.scroll_table("Recent events") %}
+  <table>
+    <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Kind</th><th scope="col">Message</th></tr></thead>
+    <tbody>
+    {% for e in o.events %}
+      <tr class="lvl-{{ e.level }}"><td class="nowrap">{{ e.ts | ts }}</td><td><span class="tag {{ 'bad' if e.level in ('error', 'critical') else 'warn' if e.level == 'warning' else '' }}">{{ e.level }}</span></td><td>{{ e.kind }}</td><td class="wrap-text">{{ e.message }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+  {% else %}
+  <p class="empty-state">No events recorded yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

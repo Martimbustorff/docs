@@ -1,0 +1,151 @@
+{% import "_macros.html" as m %}
+<p class="lead">Generated {{ bt.generated_at or "at an unknown time" }}. <strong>{{ bt.n_configs }}</strong> configurations tested (strategy &times; parameters &times; symbol). Survivors pass every filter in both windows; they are ranked on the in-sample window only.</p>
+
+<section aria-labelledby="bt-setup-h">
+  <h2 id="bt-setup-h">Setup</h2>
+  <div class="cards">
+    <article class="card">
+      <h3>Windows</h3>
+      <dl class="kv">
+        <dt>In-sample (ranks)</dt><dd>{{ bt.in_sample }}</dd>
+        <dt>Out-of-sample (pass/fail only)</dt><dd>{{ bt.out_of_sample }}</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <h3>Filters</h3>
+      {% if bt.filters %}
+      <dl class="kv">{% for k, v in bt.filters %}<dt>{{ k | replace("_", " ") }}</dt><dd>{{ m.value(v) }}</dd>{% endfor %}</dl>
+      {% else %}<p class="muted">Not recorded.</p>{% endif %}
+    </article>
+    <article class="card">
+      <h3>Costs</h3>
+      <dl class="kv">{% for name, table in bt.costs %}<dt>{{ name | replace("_bps", "") }} (bps)</dt><dd>{% for k, v in table %}{{ k }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}n/a{% endfor %}</dd>{% endfor %}</dl>
+    </article>
+    <article class="card">
+      <h3>Data</h3>
+      {% if bt.data %}
+      <dl class="kv">{% for sym, d in bt.data %}<dt>{{ sym }}</dt><dd>{{ d.get("first", "?") }} to {{ d.get("last", "?") }} ({{ d.get("bars", "?") }} bars)</dd>{% endfor %}</dl>
+      {% else %}<p class="muted">Not recorded.</p>{% endif %}
+    </article>
+  </div>
+</section>
+
+<section aria-labelledby="bt-winners-h">
+  <h2 id="bt-winners-h">Winners</h2>
+  <div class="cards">
+  {% for sym in bt.symbols %}
+    <article class="card">
+      <h3>{{ sym.symbol }}</h3>
+      {% if sym.winner %}
+      <p><span class="tag ok">&#9733; winner</span> <strong>{{ sym.winner.label }}</strong></p>
+      {% if sym.winner.title %}<p>{{ sym.winner.title }}</p>{% endif %}
+      <p class="muted">Score {{ sym.winner.score }} (in-sample Calmar).{% if sym.winner.params %} Params: {% for k, v in sym.winner.params %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}</p>
+      {% if sym.winner.rules %}
+      <dl class="kv rules">{% for k, v in sym.winner.rules %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+      {% endif %}
+      {% if sym.approvals %}<p class="muted">Approvals: {{ sym.approvals.needing }} of {{ sym.approvals.entries }} entry orders ({{ sym.approvals.share }}) were above the approval threshold.</p>{% endif %}
+      {% else %}
+      <p><span class="tag bad">&#10007; no winner</span></p>
+      <p>No strategy survived for {{ sym.symbol }}, so it stays disabled.</p>
+      {% endif %}
+    </article>
+  {% else %}
+    <p class="empty-state">No symbols in the results.</p>
+  {% endfor %}
+  </div>
+  <figure class="chart-box">
+    {{ bt.winner_chart }}
+    <figcaption>Each winner backtested alone on its own capital, full history, weekly closes.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="bt-board-h">
+  <h2 id="bt-board-h">Leaderboards</h2>
+  <p class="muted">Survivors first, by in-sample score. IS = in-sample, OOS = out-of-sample. PF = profit factor (&infin; means no losing trades). Neighbours = share of adjacent grid points that also survive, a robustness hint.</p>
+  {% for sym in bt.symbols %}
+  <h3>{{ sym.symbol }}: {{ sym.survivors }} of {{ sym.runs | length }} survived</h3>
+  {% if sym.runs %}
+  {% call m.scroll_table("Leaderboard for " ~ sym.symbol) %}
+  <table class="board">
+    <thead>
+      <tr><th scope="col" rowspan="2">Rank</th><th scope="col" rowspan="2">Configuration</th><th scope="col" rowspan="2">Result</th>
+          <th scope="colgroup" colspan="5">In-sample</th><th scope="colgroup" colspan="5">Out-of-sample</th>
+          <th scope="col" rowspan="2" class="num">Neighbours</th><th scope="col" rowspan="2" class="num">Score</th><th scope="col" rowspan="2">Fail reasons</th></tr>
+      <tr><th scope="col" class="num">CAGR</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th>
+          <th scope="col" class="num">Return</th><th scope="col" class="num">Max DD</th><th scope="col" class="num">Win rate</th><th scope="col" class="num">PF</th><th scope="col" class="num">Trades</th></tr>
+    </thead>
+    <tbody>
+    {% for r in sym.runs %}
+      <tr class="{{ 'winner' if r.winner else 'survivor' if r.passed else '' }}">
+        <td class="num">{{ r.rank if r.rank is not none else "" }}</td>
+        <th scope="row" class="nowrap">{{ r.label }}</th>
+        <td>{% if r.winner %}<span class="tag ok">&#9733; winner</span>{% elif r.passed %}<span class="tag ok">&#10003; survivor</span>{% else %}<span class="tag bad">&#10007; failed</span>{% endif %}</td>
+        <td class="num">{{ r.is_.cagr }}</td><td class="num">{{ r.is_.dd }}</td><td class="num">{{ r.is_.win }}</td><td class="num">{{ r.is_.pf }}</td><td class="num">{{ r.is_.trades }}</td>
+        <td class="num">{{ r.oos.ret }}</td><td class="num">{{ r.oos.dd }}</td><td class="num">{{ r.oos.win }}</td><td class="num">{{ r.oos.pf }}</td><td class="num">{{ r.oos.trades }}</td>
+        <td class="num">{{ r.neighbors }}</td><td class="num">{{ r.score }}</td>
+        <td class="wrap-text">{{ r.fail_reasons | join("; ") }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+  {% else %}<p class="muted">No runs recorded for {{ sym.symbol }}.</p>{% endif %}
+  {% endfor %}
+</section>
+
+<section aria-labelledby="bt-regimes-h">
+  <h2 id="bt-regimes-h">Regimes and stress windows</h2>
+  {% set with_regimes = bt.symbols | selectattr("regimes") | list %}
+  {% for sym in with_regimes %}
+  <h3>{{ sym.symbol }} winner</h3>
+  {{ m.regime_tables(sym.regimes, sym.symbol ~ " winner") }}
+  {% endfor %}
+  {% set portfolio_regimes = bt.portfolios | selectattr("regimes") | list %}
+  {% for p in portfolio_regimes %}
+  <h3>{{ p.title }}</h3>
+  {% if p.regime_proxy %}<p class="muted">Trend and volatility regimes are labelled from {{ p.regime_proxy }}.</p>{% endif %}
+  {{ m.regime_tables(p.regimes, p.title | lower) }}
+  {% endfor %}
+  {% if not with_regimes and not portfolio_regimes %}<p class="empty-state">No regime breakdown recorded.</p>{% endif %}
+</section>
+
+<section aria-labelledby="bt-portfolio-h">
+  <h2 id="bt-portfolio-h">Portfolio</h2>
+  {% for p in bt.portfolios %}
+  <h3>{{ p.title }}</h3>
+  <p>All winners on shared capital with the total exposure cap, over the <strong>{{ p.window }}</strong> window{% if p.dates %} ({{ p.dates }}){% endif %}.</p>
+  <figure class="chart-box">
+    {{ p.chart }}
+    <figcaption>{{ p.title }} equity, weekly closes.</figcaption>
+  </figure>
+  {% call m.scroll_table(p.title ~ " metrics") %}
+  <table class="metrics">
+    <caption>{{ p.title }}: metrics</caption>
+    <tbody>{% for label, v in p.metrics %}<tr><th scope="row">{{ label }}</th><td class="num">{{ v }}</td></tr>{% else %}<tr><td>No metrics recorded.</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endcall %}
+  <dl class="kv">
+    {% if p.trades_by_symbol %}<dt>Trades by symbol</dt><dd>{% for sym, n in p.trades_by_symbol %}{{ sym }} {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>{% endif %}
+    {% if p.approvals %}<dt>Approvals</dt><dd>{{ p.approvals.needing }} of {{ p.approvals.entries }} entry orders ({{ p.approvals.share }}) would have waited for Telegram approval</dd>{% endif %}
+    <dt>Entries shrunk by the exposure cap</dt><dd>{{ p.shrunk }}</dd>
+    <dt>Entries blocked</dt><dd>{{ p.blocked }}</dd>
+    <dt>Daily loss limit hits</dt><dd><strong>{{ p.daily_loss_hits }}</strong>{% if p.daily_loss_days %} ({{ p.daily_loss_days | join(", ") }}){% endif %}</dd>
+  </dl>
+  <h4>Would the kill switch have fired?</h4>
+  {% if p.kill_fires %}
+  {% call m.scroll_table(p.title ~ " kill switch firings") %}
+  <table>
+    <thead><tr><th scope="col">Date</th><th scope="col">Reason</th></tr></thead>
+    <tbody>{% for day, reason in p.kill_fires %}<tr><td class="nowrap">{{ day }}</td><td class="wrap-text">{{ reason }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endcall %}
+  {% else %}<p><span class="tag ok">&#10003; no</span> The kill switch would not have fired in this window.</p>{% endif %}
+  {% else %}
+  <p class="empty-state">No portfolio backtest recorded (no winners, or the tournament skipped it).</p>
+  {% endfor %}
+</section>
+
+<section aria-labelledby="bt-caveats-h">
+  <h2 id="bt-caveats-h">Caveats</h2>
+  <ul>{% for c in bt.caveats %}<li>{{ c }}</li>{% endfor %}</ul>
+</section>

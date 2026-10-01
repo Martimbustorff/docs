@@ -1,0 +1,37 @@
+# Keep the build context small and free of secrets and state. The Dockerfile copies only
+# requirements.txt, bot/, strategy.md and results/.
+
+# Secrets: never let them reach the build context or an image layer.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Runtime state and market data: mounted as volumes at runtime.
+var
+data
+backups
+**/*.sqlite3
+**/*.sqlite3-*
+**/*.log
+
+# Tooling, caches and version control.
+.git
+.gitignore
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Not needed at runtime.
+tests
+deploy
+Dockerfile
+docker-compose.yml
+.dockerignore
+requirements-dev.txt
+*.md
+!strategy.md

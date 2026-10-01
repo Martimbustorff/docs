@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block content %}
+<p>Jev scores each entry setup with calibrated probabilities and can only veto. Mode: <strong>{{ j.mode }}</strong>, model <code>{{ j.model }}</code>. Any error blocks the entry (fail-closed).</p>
+
+<section class="cards" aria-label="Jev statistics">
+  <article class="card">
+    <h2>Decisions</h2>
+    <p class="stat">{{ j.stats.n }}</p>
+    <p class="muted">Calls where Jev was consulted (mode off and exits make no call).</p>
+  </article>
+  <article class="card">
+    <h2>Latency</h2>
+    <dl class="kv">
+      <dt>Average</dt><dd>{{ j.stats.avg_latency_ms | ms if j.stats.n else "n/a" }}</dd>
+      <dt>Median (p50)</dt><dd>{{ j.p50 | ms }}</dd>
+      <dt>p95</dt><dd>{{ j.p95 | ms }}</dd>
+    </dl>
+    <p class="muted">Percentiles over {{ j.n_latencies }} calls linked to signals.</p>
+  </article>
+  <article class="card">
+    <h2>Cost</h2>
+    <dl class="kv">
+      <dt>Per decision</dt><dd>{{ j.stats.avg_cost_usd | cost if j.stats.n else "n/a" }}</dd>
+      <dt>Total</dt><dd>{{ j.stats.total_cost_usd | cost }}</dd>
+    </dl>
+  </article>
+  <article class="card">
+    <h2>Verdicts</h2>
+    <dl class="kv">
+      <dt>Passed</dt><dd>{{ j.counts.passed }}</dd>
+      <dt>Vetoed</dt><dd>{{ j.counts.vetoed }}</dd>
+      <dt>Shadow, would veto</dt><dd>{{ j.counts.shadow_vetoed }}</dd>
+      <dt>Errors</dt><dd>{{ j.counts.errors }}</dd>
+    </dl>
+  </article>
+</section>
+
+<section aria-labelledby="jev-lat-h">
+  <h2 id="jev-lat-h">Latency distribution</h2>
+  <figure class="chart-box">
+    {{ j.histogram }}
+    <figcaption>Calls by latency. The configured timeout bounds the tail; timeouts count as errors.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="jev-gates-h">
+  <h2 id="jev-gates-h">Entry signals by gate</h2>
+  {% if j.gate_counts %}
+  <ul class="inline">{% for gate, n in j.gate_counts %}<li>{{ m.gate_tag(gate) }} {{ n }}</li>{% endfor %}</ul>
+  {% else %}<p class="empty-state">No entry signals yet.</p>{% endif %}
+</section>
+
+<section aria-labelledby="jev-out-h">
+  <h2 id="jev-out-h">Did the vetoes help?</h2>
+  <p>Result is the trade's P&amp;L over its entry notional; for entries that did not trade it is the runner's counterfactual (what the entry would have made). Small samples mean wide error bars.</p>
+  {% call m.scroll_table("Outcomes of passed versus vetoed signals") %}
+  <table>
+    <thead><tr><th scope="col">Group</th><th scope="col" class="num">Signals</th><th scope="col" class="num">Realized</th><th scope="col" class="num">Counterfactual</th><th scope="col" class="num">Average result</th><th scope="col" class="num">Win rate</th></tr></thead>
+    <tbody>
+    {% for g in j.outcomes %}
+      <tr><th scope="row">{{ g.label }}</th><td class="num">{{ g.signals }}</td><td class="num">{{ g.realized }}</td><td class="num">{{ g.counterfactual }}</td><td class="num {{ g.avg | signed_class }}">{{ g.avg | frac }}</td><td class="num">{{ g.win_rate | rate }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+</section>
+
+<section aria-labelledby="jev-q-h">
+  <h2 id="jev-q-h">Per question</h2>
+  {% if j.questions %}
+  {% call m.scroll_table("Results per Jev question") %}
+  <table>
+    <thead><tr><th scope="col">Question</th><th scope="col">Gate</th><th scope="col" class="num">Answered</th><th scope="col" class="num">Failed</th><th scope="col" class="num">Avg probability</th><th scope="col" class="num">Avg result when passed</th><th scope="col" class="num">Avg result when failed</th></tr></thead>
+    <tbody>
+    {% for q in j.questions %}
+      <tr><th scope="row">{{ q.name }}</th><td>{{ q.rule }}</td><td class="num">{{ q.answered }}</td><td class="num">{{ q.failed }}</td><td class="num">{{ q.avg_value | num(3) }}</td>
+        <td class="num">{{ q.avg_pass | frac }} <span class="muted">(n={{ q.n_pass }})</span></td><td class="num">{{ q.avg_fail | frac }} <span class="muted">(n={{ q.n_fail }})</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+  {% else %}<p class="empty-state">No answered questions yet.</p>{% endif %}
+</section>
+
+<section aria-labelledby="jev-veto-h">
+  <h2 id="jev-veto-h">Latest vetoes</h2>
+  {% if j.vetoes %}
+  {% call m.scroll_table("Latest vetoed signals") %}
+  <table>
+    <thead><tr><th scope="col">Time</th><th scope="col">Symbol</th><th scope="col">Strategy</th><th scope="col">Failed questions</th><th scope="col" class="num">Counterfactual</th></tr></thead>
+    <tbody>
+    {% for r in j.vetoes %}
+      <tr><td class="nowrap">{{ r.ts | ts }}</td><td>{{ r.symbol }}</td><td>{{ r.strategy }}</td>
+        <td>{% for a in r.answers if a.passed is not sameas true %}{{ a.name }} {{ a.value | num(2) }} <span class="muted">({{ a.rule }})</span>{% if not loop.last %}; {% endif %}{% else %}<span class="muted">none recorded</span>{% endfor %}</td>
+        <td class="num {{ r.result | signed_class }}">{{ r.result | frac }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+  {% else %}<p class="empty-state">No vetoes yet.</p>{% endif %}
+</section>
+{% endblock %}

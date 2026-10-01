@@ -1,0 +1,86 @@
+# Paper-first trading bot: one image, two services. Walkthrough: deploy/VPS.md.
+#
+#   docker compose up -d --build     build the image and start both services
+#   docker compose logs -f bot       follow the bot's log
+#   docker compose exec bot python -m bot status
+#
+# Secrets come from .env (chmod 600). strategy.md and results/ are mounted read-only, so the
+# containers can never rewrite their own risk rules; change them from the host and recreate.
+
+name: trading-bot
+
+x-app: &app
+  build:
+    context: .
+    args:
+      APP_UID: ${APP_UID:-1000}
+      APP_GID: ${APP_GID:-1000}
+  image: trading-bot:local
+  env_file: .env
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  volumes:
+    - ./var:/app/var
+    - ./data:/app/data
+    - ./strategy.md:/app/strategy.md:ro
+    - ./results:/app/results:ro
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  bot:
+    <<: *app
+    command: ["run"]
+    environment:
+      BOT_DATA_DIR: /app/var
+    # SIGINT lets Python unwind (KeyboardInterrupt) instead of dying mid-tick.
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+
+  dashboard:
+    <<: *app
+    command: ["dashboard"]
+    environment:
+      BOT_DATA_DIR: /app/var
+      # Bind inside the container; the host side is published on loopback only (below).
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: "8080"
+      # The dashboard is read-only and never trades, so it gets no trading or alert credentials.
+      ALPACA_API_KEY: ""
+      ALPACA_SECRET_KEY: ""
+      TYPESAFE_API_KEY: ""
+      TELEGRAM_BOT_TOKEN: ""
+      HEARTBEAT_URL: ""
+    ports:
+      # Loopback only. Docker bypasses ufw for published ports, so never use 0.0.0.0 here.
+      # Reach it through an SSH tunnel: ssh -L 8080:127.0.0.1:8080 you@server
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import base64, os, sys, urllib.request
+          req = urllib.request.Request("http://127.0.0.1:8080/healthz")
+          password = os.environ.get("DASHBOARD_PASSWORD", "")
+          if password:
+              user = os.environ.get("DASHBOARD_USER") or "admin"
+              token = base64.b64encode(f"{user}:{password}".encode()).decode()
+              req.add_header("Authorization", "Basic " + token)
+          with urllib.request.urlopen(req, timeout=5) as resp:
+              sys.exit(0 if resp.status == 200 else 1)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
