@@ -277,7 +277,15 @@ class Settings(BaseModel):
     trading_mode: Literal["paper", "live"] = "paper"
     live_trading_ack: str | None = None
     kill_switch: bool = False  # KILL_SWITCH=1 forces the kill switch on
+    heartbeat_url: SecretStr | None = None  # dead-man's switch: pinged after every clean tick
     data_dir: Path = ROOT / "var"
+
+    @field_validator("heartbeat_url")
+    @classmethod
+    def _https_heartbeat(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and not value.get_secret_value().startswith("https://"):
+            raise ValueError("HEARTBEAT_URL must be an https:// URL")
+        return value
 
     @property
     def has_alpaca(self) -> bool:
@@ -326,6 +334,7 @@ _ENV_KEYS = {
     "TRADING_MODE": "trading_mode",
     "LIVE_TRADING_ACK": "live_trading_ack",
     "KILL_SWITCH": "kill_switch",
+    "HEARTBEAT_URL": "heartbeat_url",
     "BOT_DATA_DIR": "data_dir",
 }
 

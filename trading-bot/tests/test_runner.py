@@ -9,6 +9,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
+import httpx
 import pandas as pd
 import pytest
 import yaml
@@ -1327,3 +1328,36 @@ def test_approval_survives_a_failed_price_check(approvals):
     h.broker.last_price = real_last_price
     assert h.tick(ny(TUE, 9, 31), price=100.8, market_open=True) == []
     assert [o.qty for o in h.broker.submitted] == [20]  # the drift check ran again at execution
+
+
+def test_heartbeat_ping_only_after_a_clean_tick(tmp_path, scripted):
+    h = Harness(tmp_path, make_cfg(), HEARTBEAT_URL="https://hc-ping.example/abc123")
+    pings = []
+    h.runner.ping = pings.append
+    assert h.after_close(MON) == []
+    assert pings == ["https://hc-ping.example/abc123"]
+
+    def down(*args, **kwargs):
+        raise ConnectionError("alpaca 503")
+
+    h.broker.positions = down
+    assert h.tick(ny(TUE, 11, 0), market_open=True) != []
+    assert len(pings) == 1  # a failing tick sends no ping, so the monitor notices
+
+
+def test_heartbeat_ping_failure_never_breaks_the_tick(tmp_path, scripted, caplog):
+    h = Harness(tmp_path, make_cfg(), HEARTBEAT_URL="https://hc-ping.example/secret-token")
+
+    def broken(url):
+        raise httpx.ConnectError("no route to host")
+
+    h.runner.ping = broken
+    assert h.after_close(MON) == []
+    assert "secret-token" not in caplog.text
+
+
+def test_heartbeat_url_must_be_https(tmp_path):
+    from bot.config import load_settings
+
+    with pytest.raises(Exception, match="https"):
+        load_settings(env_file=None, environ={"BOT_DATA_DIR": str(tmp_path), "HEARTBEAT_URL": "http://insecure"})

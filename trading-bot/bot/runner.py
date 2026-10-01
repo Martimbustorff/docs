@@ -35,6 +35,7 @@ from datetime import time as clock_time
 from typing import Any, TypeVar
 from zoneinfo import ZoneInfo
 
+import httpx
 import pandas as pd
 
 from bot import news
@@ -326,6 +327,7 @@ class Runner:
         self.settings = settings
         self.cfg = cfg
         self.last_progress: float | None = None  # monotonic time of the last loop iteration (watchdog)
+        self.ping: Callable[[str], Any] = _http_ping
         self.broker = broker
         self.gateway = gateway
         self.risk = risk
@@ -380,7 +382,19 @@ class Runner:
             run("flatten", self._ensure_flat, now)  # tripped during this tick: don't wait a poll
         if not failed and self._errors_this_tick == 0 and self.risk.consecutive_errors <= errors_before:
             self.risk.after_success()
+            self._ping_heartbeat(now)
         return failed
+
+    def _ping_heartbeat(self, now: datetime) -> None:
+        """Ping the external dead-man's switch after a clean tick. When the bot, the VPS or the
+        network dies, or every tick fails, the pings stop and the monitor pages you."""
+        url = self.settings.heartbeat_url
+        if url is None:
+            return
+        try:
+            self.ping(url.get_secret_value())
+        except Exception as exc:
+            log.warning("heartbeat ping failed: %s", type(exc).__name__)  # the URL is a secret: never log it
 
     def _tripped(self) -> bool:
         try:
@@ -1587,6 +1601,10 @@ class Runner:
 
 def _same_order(item: QueuedOrder) -> Callable[[QueuedOrder], bool]:
     return lambda q: q.kind == item.kind and q.signal_id == item.signal_id
+
+
+def _http_ping(url: str) -> None:
+    httpx.get(url, timeout=5.0).raise_for_status()
 
 
 def _never_sent_result(result: OrderResult) -> bool:

@@ -427,6 +427,9 @@ ENTRY fill creates a bot position, so a kill flatten that buys back a short the 
 is alerted and otherwise ignored. A failed price lookup during an approval doesn't lose the
 approval: the drift check runs again when the order goes out.
 
+After a tick with no errors, the runner pings `HEARTBEAT_URL` when it is set: an external
+dead-man's switch that pages you when the pings stop. The URL is a `SecretStr` and is never logged.
+
 `run_forever` sets `runner.last_progress` on every loop iteration. `python -m bot run` starts a
 watchdog thread that exits the process (exit code 1) when `last_progress` is older than
 max(300 s, 5 × `poll_seconds`). Docker's restart policy then brings the bot back, so a hung call

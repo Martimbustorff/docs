@@ -143,6 +143,7 @@ Keys go in `.env` and nowhere else. Start from `.env.example`, which documents e
 | `TYPESAFE_API_KEY` | Jev. Without it, every live entry is blocked, because Jev fails closed. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Alerts, approvals and `/kill`. See [deploy/TELEGRAM.md](deploy/TELEGRAM.md). |
 | `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | HTTP Basic auth for the dashboard. |
+| `HEARTBEAT_URL` | Optional dead-man's switch. The bot pings this URL after every clean tick, so a heartbeat monitor can page you when the bot stops. See [deploy/VPS.md](deploy/VPS.md#get-paged-when-the-bot-stops). |
 
 Follow these rules:
 

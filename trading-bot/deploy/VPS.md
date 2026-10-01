@@ -296,6 +296,7 @@ Fill in these values:
 | `TYPESAFE_API_KEY` | Your TypeSafe AI key for Jev. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Follow [TELEGRAM.md](TELEGRAM.md). |
 | `DASHBOARD_PASSWORD` | The output of `openssl rand -hex 24`. The dashboard refuses to start in Docker without it. |
+| `HEARTBEAT_URL` | Optional, and strongly recommended: a heartbeat monitor's ping URL. See [Get paged when the bot stops](#get-paged-when-the-bot-stops). |
 | `APP_UID`, `APP_GID` | The two numbers from `id -u` and `id -g`. |
 
 Keep `TRADING_MODE=paper` and `ALPACA_PAPER=true`. Leave `LIVE_TRADING_ACK` empty.
@@ -424,6 +425,21 @@ ls var/reports/
 
 Docker rotates each container's log at 10 MB and keeps five files. The daily report also lands
 in `var/reports/YYYY-MM-DD.md` and in Telegram.
+
+### Get paged when the bot stops
+
+Stops live in the bot, not at Alpaca. If the server, Docker or the network goes down, open
+positions have no stop until the bot is back. Telegram can't warn you about that, because the
+bot sends those messages itself. Set up an external dead-man's switch:
+
+1. Create a check at a heartbeat monitor such as healthchecks.io. Set its period to 5 minutes
+   and its grace time to 5 minutes.
+2. Copy the check's ping URL into `HEARTBEAT_URL` in `.env`.
+3. Run `docker compose up -d` to load it.
+
+The bot pings that URL after every tick that ran without errors. If the pings stop for any
+reason, including errors on every tick, the monitor pages you. You can then flatten from the
+Alpaca app or with `docker compose exec bot python -m bot kill`.
 
 ## 18. Stop trading in an emergency
 

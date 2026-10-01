@@ -155,7 +155,55 @@ Only the out-of-sample row is a fair estimate: the full period includes the year
 
 <!-- BEGIN FINAL_CHECK -->
 
-Not run yet. `python -m bot final-check` fills this section after paper trading.
+**Verdict: NOT READY FOR LIVE.** 4 of 6 required checks failed: Paper history, Signal parity, Fill quality, Return gap. The bot stays on paper.
+
+Generated 2026-10-01 07:31 UTC by `python -m bot final-check`.
+Paper period: none yet. Replay bars: none.
+
+### Checks
+
+| Check | Result | Value | Threshold | Detail |
+|---|---|---|---|---|
+| Paper history | FAIL | 0.0 days, 0 trades | ≥ 30 days, ≥ 8 trades | Not enough paper history: the store has no signals or equity snapshots yet. Paper trade for at least 30 days and 8 closed trades. |
+| Signal parity | FAIL | n/a | ≥ 90% both ways | Not enough paper history: the store has no signals or equity snapshots yet. |
+| Fill quality | FAIL | n/a | crypto ≤ 10 bps, stock ≤ 5 bps | Not enough paper history: the store has no signals or equity snapshots yet. |
+| Return gap | FAIL | n/a | \|gap\| ≤ 3 pp | Not enough paper history: the store has no signals or equity snapshots yet. |
+| Kill-switch drill | PASS | sim, passed, 0.0 days old | passed, ≤ 30 days old | The sim drill of 2026-10-01 07:30 UTC passed all 10 steps (0.0 days ago). A `--paper` drill against the real paper account is stronger evidence. |
+| Risk config | PASS | max DD 6.4% | max DD < 12% (80% of the 15% kill), no kill in backtest | The portfolio backtest's max drawdown is 6.4% (out_of_sample), 6.4% (full) against the 15% kill level (43% of it at worst), and the kill switch never fired in the backtest. The 2% daily loss limit was hit 4 time(s). |
+| Regime risk | info | SPY: covid_crash_2020; QQQ: crypto_crash_2021_2022; BTC/USD: crypto_winter_2018 | info only | SPY breakout(atr_mult=2,entry_n=20,exit_n=20) breaks in a range-bound market full of false breakouts: it buys each new high just before the price falls back into the range; worst in the backtest: stress window covid_crash_2020 (-1.6%, max DD 1.8%); trend regime sideways (+1.2%, max DD 1.6%); volatility regime high (+4.4%, max DD 3.4%). QQQ momentum(atr_mult=3,lookback=252) breaks in a sharp reversal after a long run (a momentum crash): the lookback return stays positive for weeks after the top, so it holds into the fall until the trailing stop hits; worst in the backtest: stress window crypto_crash_2021_2022 (-3.6%, max DD 4.1%); trend regime bear (+0.0%, max DD 0.2%); volatility regime high (+3.8%, max DD 3.8%). BTC/USD momentum(atr_mult=3,lookback=120) breaks in a sharp reversal after a long run (a momentum crash): the lookback return stays positive for weeks after the top, so it holds into the fall until the trailing stop hits; worst in the backtest: stress window crypto_winter_2018 (-3.7%, max DD 3.7%); trend regime bear (-3.8%, max DD 3.8%); volatility regime low (+32.7%, max DD 4.2%). |
+
+### Does paper match the backtest?
+
+Not yet known. The store has no paper trading history, so there is nothing to compare. Run the bot in paper mode for at least 30 days and 8 closed trades, then run the final check again.
+
+### Did the kill switch fire in testing?
+
+Yes.
+
+- **Drill:** The sim drill of 2026-10-01 07:30 UTC passed all 10 steps (0.0 days ago). A `--paper` drill against the real paper account is stronger evidence.
+- **Drill steps:** entry ok, resting_order ok, trip ok, flatten ok, no_open_orders ok, flat ok, entry_refused ok, alert_sent ok, exit_allowed ok, bot_state_untouched ok.
+- **Paper trading:** no paper history yet.
+- **Backtest:** The portfolio backtest's max drawdown is 6.4% (out_of_sample), 6.4% (full) against the 15% kill level (43% of it at worst), and the kill switch never fired in the backtest. The 2% daily loss limit was hit 4 time(s).
+
+### What market regime would break this?
+
+- **SPY breakout(atr_mult=2,entry_n=20,exit_n=20)** breaks in a range-bound market full of false breakouts: it buys each new high just before the price falls back into the range; worst in the backtest: stress window covid_crash_2020 (-1.6%, max DD 1.8%); trend regime sideways (+1.2%, max DD 1.6%); volatility regime high (+4.4%, max DD 3.4%).
+- **QQQ momentum(atr_mult=3,lookback=252)** breaks in a sharp reversal after a long run (a momentum crash): the lookback return stays positive for weeks after the top, so it holds into the fall until the trailing stop hits; worst in the backtest: stress window crypto_crash_2021_2022 (-3.6%, max DD 4.1%); trend regime bear (+0.0%, max DD 0.2%); volatility regime high (+3.8%, max DD 3.8%).
+- **BTC/USD momentum(atr_mult=3,lookback=120)** breaks in a sharp reversal after a long run (a momentum crash): the lookback return stays positive for weeks after the top, so it holds into the fall until the trailing stop hits; worst in the backtest: stress window crypto_winter_2018 (-3.7%, max DD 3.7%); trend regime bear (-3.8%, max DD 3.8%); volatility regime low (+32.7%, max DD 4.2%).
+
+### WHAT COULD BLOW UP THIS ACCOUNT?
+
+Concrete ways this bot can lose much more than its 1% risk per trade. Figures come from the cached daily data (2014-09-17 to 2026-09-29), the tournament results and the paper record.
+
+1. **Gaps and crashes jump the stop.** Stops are market orders sent after the price crosses the level, so a gap fills wherever the market opens. SPY: largest overnight gap -10.4% on 2020-03-16 vs a typical stop distance of 2.1% for breakout(atr_mult=2,entry_n=20,exit_n=20); a full-size position (about $3,300) would lose about $345, 3.4× the planned $100 risk; QQQ: largest overnight gap -9.5% on 2020-03-16 vs a typical stop distance of 4.3% for momentum(atr_mult=3,lookback=252); a full-size position (about $2,333) would lose about $221, 2.2× the planned $100 risk; BTC/USD: largest one-day fall (prior close to low) -38.6% on 2020-03-12 vs a typical stop distance of 11.5% for momentum(atr_mult=3,lookback=120); a full-size position (about $869) would lose about $335, 3.4× the planned $100 risk. If every position took its worst day at once the book would lose about $901 (9.0% of capital), against a $200 daily loss limit and a $1,500 drawdown kill: those limits block entries and flatten after the fact; they cannot cap a gap.
+2. **The stops live in the bot, not at Alpaca.** The bot checks prices every poll and sends a market exit when a stop is crossed. If the VPS, Docker, the network or the bot is down, open positions have no stop at all, and crypto keeps trading through nights and weekends. There is no paper equity history yet, so the bot's real uptime is unknown. Add a dead-man's switch: set HEARTBEAT_URL to an external heartbeat monitor (for example healthchecks.io) that expects a ping every few minutes and pages you when the pings stop, so you can flatten from the Alpaca app.
+3. **Correlated positions lose together.** SPY and QQQ often move together, so holding both is close to one double-size bet. Daily return correlations: SPY/QQQ 0.93 over the whole history, 0.93 over the last year; SPY/BTC/USD 0.23 over the whole history, 0.49 over the last year; QQQ/BTC/USD 0.23 over the whole history, 0.46 over the last year. On 2020-03-12 a book holding every enabled symbol at full size would have lost about $853 (8.5% of capital) in one day. The 100% total exposure cap allows every position to be open at once.
+4. **Crypto never closes.** BTC/USD annualised volatility over the last year 45% vs 13% for SPY. It trades nights and weekends, when you are least likely to notice a VPS outage, and a venue outage or halt can stop the bot from exiting. Crypto held at Alpaca is not covered by SIPC the way stocks are. Fees (25 bps a side in the config) make every whipsaw expensive.
+5. **The regime that breaks each winner.** SPY breakout(atr_mult=2,entry_n=20,exit_n=20) breaks in a range-bound market full of false breakouts: it buys each new high just before the price falls back into the range; worst in the backtest: stress window covid_crash_2020 (-1.6%, max DD 1.8%); trend regime sideways (+1.2%, max DD 1.6%); volatility regime high (+4.4%, max DD 3.4%). QQQ momentum(atr_mult=3,lookback=252) breaks in a sharp reversal after a long run (a momentum crash): the lookback return stays positive for weeks after the top, so it holds into the fall until the trailing stop hits; worst in the backtest: stress window crypto_crash_2021_2022 (-3.6%, max DD 4.1%); trend regime bear (+0.0%, max DD 0.2%); volatility regime high (+3.8%, max DD 3.8%). BTC/USD momentum(atr_mult=3,lookback=120) breaks in a sharp reversal after a long run (a momentum crash): the lookback return stays positive for weeks after the top, so it holds into the fall until the trailing stop hits; worst in the backtest: stress window crypto_winter_2018 (-3.7%, max DD 3.7%); trend regime bear (-3.8%, max DD 3.8%); volatility regime low (+32.7%, max DD 4.2%).
+6. **Outages of Alpaca, Jev or Telegram.** If Alpaca is down the bot cannot exit; after 5 consecutive errors the kill switch trips, but its flatten also needs Alpaca, so positions stay open until it is back. If Jev is down every entry is blocked (fail-closed): missed trades, not losses. If Telegram is down, approvals expire (after 12 hours for crypto, 30 minutes after the next open for stocks), so those are missed trades, and /kill never arrives: use `python -m bot kill` on the server or set KILL_SWITCH=1.
+7. **Approval fatigue.** Every entry above $1,000 waits for a Telegram tap, and a full-size position is about $3,300, so nearly every entry asks. In the backtest 199 of the winners' 215 entries needed approval. During paper trading: 0 requested, 0 approved, 0 rejected, 0 expired. Tapping Approve many times a month turns the check into a reflex; read each request.
+8. **Configuration mistakes.** The kill switch's flatten closes every position in the Alpaca account, not just the bot's, so the paper (and any live) account must be dedicated to the bot. `ALPACA_PAPER=false` with live keys points the bot at real money: the live guard refuses a mismatched mode, but it cannot tell whether you meant it. Risk limits live in strategy.md, so editing one (for example max_position_usd) changes every order without a new backtest.
+9. **Overfitting.** The tournament tested 90 configurations and kept the best in-sample, so the winners' numbers are flattered by selection, and a handful of trades a year gives wide error bars. SPY: 19 out-of-sample trades, 67% of neighbouring parameter sets also passed; QQQ: 27 out-of-sample trades, 100% of neighbouring parameter sets also passed; BTC/USD: 37 out-of-sample trades, 33% of neighbouring parameter sets also passed. Expect live results to be worse than the backtest.
 
 <!-- END FINAL_CHECK -->
 

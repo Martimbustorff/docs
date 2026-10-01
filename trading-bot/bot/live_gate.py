@@ -1585,9 +1585,9 @@ def _software_stop_item(f: _Findings) -> tuple[str, str]:
     return "The stops live in the bot, not at Alpaca.", (
         "The bot checks prices every poll and sends a market exit when a stop is crossed. If the VPS, "
         "Docker, the network or the bot is down, open positions have no stop at all, and crypto keeps "
-        f"trading through nights and weekends. {observed} Add a dead-man's switch: an external heartbeat "
-        "monitor that expects a ping from the bot every few minutes and pages you when it stops, so you "
-        "can flatten from the Alpaca app."
+        f"trading through nights and weekends. {observed} Add a dead-man's switch: set HEARTBEAT_URL to an "
+        "external heartbeat monitor (for example healthchecks.io) that expects a ping every few minutes "
+        "and pages you when the pings stop, so you can flatten from the Alpaca app."
     )
 
 

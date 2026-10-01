@@ -60,6 +60,7 @@ services:
       ALPACA_SECRET_KEY: ""
       TYPESAFE_API_KEY: ""
       TELEGRAM_BOT_TOKEN: ""
+      HEARTBEAT_URL: ""
     ports:
       # Loopback only. Docker bypasses ufw for published ports, so never use 0.0.0.0 here.
       # Reach it through an SSH tunnel: ssh -L 8080:127.0.0.1:8080 you@server
