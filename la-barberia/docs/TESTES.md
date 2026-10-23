@@ -1,10 +1,10 @@
 # Testes realizados, limitações e configuração pendente
 
-Ambiente de teste: Node 22, PostgreSQL 16 local, Chromium (Playwright) com viewport de telemóvel (390×844) e fuso do dispositivo deliberadamente diferente (`America/New_York`). Data dos testes: 23/10/2026.
+Ambiente de teste (atualizado após as alterações pedidas pelo Carlos: marcações de 30 min, sem preços nem email, lista cronológica, aviso por WhatsApp): Node 22, PostgreSQL 16 local, Chromium (Playwright) com viewport de telemóvel (390×844) e fuso do dispositivo deliberadamente diferente (`America/New_York`). Data dos testes: 23/10/2026.
 
 ## Resultados
 
-### Automáticos — `npm test` (55 testes, repetidos várias vezes sem falhas intermitentes) e `npm run typecheck`
+### Automáticos — `npm test` (62 testes, repetidos várias vezes sem falhas intermitentes) e `npm run typecheck`
 Correm contra Postgres real (não há *mocks* da base de dados).
 
 | Requisito | Como foi verificado |
@@ -31,7 +31,7 @@ Percurso completo em telemóvel: página inicial → escolher serviço → vagas
 
 ## O que **não** foi testado
 - Alojamento real, Supabase/Neon reais, *poolers* de ligações (a aplicação usa `prepare: false` para os suportar, mas só testei Postgres 16 local).
-- Envio de email (Resend): implementado, **nunca executado** (sem chave).
+- Envio real do aviso por WhatsApp (CallMeBot): os testes verificam o pedido feito e que falhas não afetam a marcação, mas **nunca enviei uma mensagem real** (falta a chave do Carlos).
 - Dispositivos reais (iOS Safari, Android) e leitores de ecrã: só Chromium emulado + auditoria automática. Recomenda-se um teste manual em 2 telemóveis antes de abrir ao público.
 - Carga/desempenho; comportamento atrás de um CDN/proxy concreto.
 - Os termos e limites dos serviços gratuitos (não consegui abrir as páginas oficiais; ver [SERVICOS-E-LIMITES.md](SERVICOS-E-LIMITES.md)).
@@ -48,9 +48,9 @@ Percurso completo em telemóvel: página inicial → escolher serviço → vagas
 
 ## Configuração pendente
 1. **Confirmar com o Carlos:** morada, WhatsApp (+351 961 916 045, retirado do Instagram), slogan e Instagram.
-2. **Dados reais:** serviços, preços, durações, horário semanal e pausas; regras (antecedência, prazo de cancelamento, horizonte); desligar o modo de demonstração.
+2. **Dados reais:** horário semanal e pausas; regras (antecedência, prazo de cancelamento, horizonte); desligar o modo de demonstração.
 3. **Privacidade:** nome/firma, NIF e email do responsável; rever o texto.
 4. **Infraestrutura:** escolher alojamento e BD (verificando uso comercial gratuito), `DATABASE_URL`, `APP_SECRET`, `PUBLIC_BASE_URL`, `CRON_SECRET`; `npm run db:migrate`; criar o administrador.
 5. **Rotinas:** agendar a tarefa diária de manutenção e as cópias de segurança; testar um restauro.
-6. **Opcional:** email (Resend + domínio verificado); domínio próprio.
+6. **Aviso por WhatsApp ao Carlos:** ativar o CallMeBot e configurar as variáveis ([NOTIFICACOES.md](NOTIFICACOES.md)). Opcional: domínio próprio.
 7. **Fotografias/logótipo:** não foram usadas imagens sem autorização; o ícone é um "L" provisório. O logótipo do Instagram só deve ser usado com autorização do Carlos.

@@ -34,14 +34,6 @@ const phone = z
     return n;
   });
 
-const optionalEmail = z
-  .string()
-  .trim()
-  .max(120)
-  .optional()
-  .transform((v) => (v ? v : undefined))
-  .pipe(z.email("Email inválido.").optional());
-
 export const idempotencyKey = z.string().regex(/^[A-Za-z0-9_-]{22,64}$/, "Chave inválida.");
 
 export const publicBookingInput = z.object({
@@ -50,7 +42,6 @@ export const publicBookingInput = z.object({
   startsAt: z.iso.datetime({ offset: true }),
   name,
   phone,
-  email: optionalEmail,
   idempotencyKey,
   /** Campo isco (honeypot): tem de vir vazio. Os robôs costumam preenchê-lo. */
   website: z.string().max(200).optional(),
@@ -74,7 +65,6 @@ export const adminAppointmentInput = z.object({
   start: localDateTime,
   name,
   phone,
-  email: optionalEmail,
   notes: z.string().trim().max(500).optional(),
   source: z.enum(["phone", "whatsapp", "walk_in", "online"]).default("phone"),
 });
@@ -99,7 +89,6 @@ export const blockInput = z.object({
 export const serviceInput = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().max(300).default(""),
-  priceCents: z.number().int().min(0).max(100000),
   durationMin: z.number().int().min(5).max(480),
   active: z.boolean().default(true),
   sortOrder: z.number().int().min(0).max(1000).default(0),

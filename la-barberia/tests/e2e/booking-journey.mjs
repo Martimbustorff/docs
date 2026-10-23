@@ -12,6 +12,10 @@ const exe = execSync("find /opt/pw-browsers -maxdepth 4 -name chrome -type f | h
 const axeSrc = fs.readFileSync(new URL("./node_modules/axe-core/axe.min.js", import.meta.url), "utf8");
 const psql = (q) => execSync(`psql -h /tmp/pgtest -p 54329 -U postgres -d labarberia_dev -At -c "${q}"`).toString().trim();
 
+import http from "node:http";
+const hooks = [];
+const hookServer = http.createServer((req, res) => { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { hooks.push(JSON.parse(b)); res.end("ok"); }); }).listen(9911);
+
 const results = [];
 const check = (name, ok, extra = "") => { results.push({ name, ok }); console.log(`${ok ? "PASS" : "FAIL"} ${name} ${extra}`); };
 
@@ -36,15 +40,13 @@ page.on("pageerror", (e) => consoleErrors.push(String(e)));
 await page.goto(BASE + "/");
 check("home mostra 'Marcar agora'", await page.getByRole("link", { name: "Marcar agora" }).isVisible());
 check("home mostra aviso de demonstração", await page.getByText("Versão de demonstração").isVisible());
-check("home lista serviços e preços", (await page.content()).includes("Corte + barba") && (await page.content()).includes("22,00"));
+check("home NÃO mostra preços", !/€|\d+,\d\d\s*€/.test(await page.content()));
 await page.screenshot({ path: OUT + "01-home.png", fullPage: true });
 await audit(page, "home");
 
 await page.getByRole("link", { name: "Marcar agora" }).click();
 await page.waitForURL("**/marcar");
-await page.getByRole("button", { name: /Corte \+ barba/ }).click();
-await page.screenshot({ path: OUT + "02-servico.png" });
-await page.getByRole("button", { name: "Continuar" }).click();
+check("o cliente não escolhe serviço (vai direto às vagas)", await page.getByRole("heading", { name: "Escolha o dia e a hora" }).isVisible());
 await page.getByRole("group", { name: "Dias com vagas" }).waitFor();
 await page.locator(".day").nth(2).click(); // um dia mais à frente (fora do prazo de cancelamento)
 const firstTime = page.locator(".time").first();
@@ -69,6 +71,8 @@ await page.screenshot({ path: OUT + "06-confirmacao.png", fullPage: true });
 check("link privado tem token imprevisível sem dados pessoais", /^[A-Za-z0-9_-]{43}$/.test(token) && !url.toLowerCase().includes("cliente"));
 check("duplo clique criou UMA marcação", psql("select count(*) from calendar_entries where customer_name='Cliente E2E'") === "1");
 check("marcação guardada na base de dados (confirmed, online)", psql("select status||'/'||source from calendar_entries where customer_name='Cliente E2E'") === "confirmed/online");
+await new Promise((r) => setTimeout(r, 500));
+check("Carlos foi notificado com nome, telemóvel e hora", hooks.some((h) => h.event === "new" && h.text.includes("Cliente E2E") && h.text.includes("+351912000111") && h.text.includes(label)), JSON.stringify(hooks.at(0)?.text));
 check("hora guardada = hora de Lisboa mostrada", (await page.locator(".summary").textContent()).includes(label));
 check("há botão de calendário .ics", await page.getByRole("link", { name: /calendário/ }).isVisible());
 const ics = await (await phone.request.get(`${BASE}/api/public/bookings/${token}/ics`)).text();
@@ -88,9 +92,12 @@ await admin.getByLabel("Palavra-passe").fill("demo-password-123456");
 await admin.getByRole("button", { name: "Entrar" }).click();
 await admin.waitForURL(BASE + "/admin");
 const day = psql("select to_char(starts_at at time zone 'Europe/Lisbon','YYYY-MM-DD') from calendar_entries where customer_name='Cliente E2E'");
+await admin.getByText("Cliente E2E").first().waitFor();
+check("agenda abre em 'Próximas marcações' (cronológica)", await admin.getByRole("heading", { name: "Próximas marcações" }).isVisible());
+await admin.screenshot({ path: OUT + "07-agenda.png", fullPage: true });
+await admin.getByRole("button", { name: "Dia", exact: true }).click();
 await admin.locator("#agenda-date").fill(day);
 await admin.getByText("Cliente E2E").first().waitFor();
-await admin.screenshot({ path: OUT + "07-agenda.png", fullPage: true });
 check("a marcação aparece na agenda privada", await admin.getByText("Cliente E2E").first().isVisible());
 check("a agenda mostra o telemóvel (só no painel)", await admin.getByText("+351912000111").first().isVisible());
 await audit(admin, "agenda");
@@ -116,8 +123,11 @@ await page.getByRole("button", { name: "Cancelar marcação" }).click();
 await page.getByRole("button", { name: "Sim, cancelar" }).click();
 await page.getByText("A marcação foi cancelada").waitFor();
 await page.screenshot({ path: OUT + "09-cancelada.png", fullPage: true });
+await new Promise((r) => setTimeout(r, 500));
+check("Carlos foi notificado do cancelamento", hooks.some((h) => h.event === "cancelled"));
 check("cancelamento pelo link guardado na BD", psql("select status||'/'||cancelled_by from calendar_entries where customer_name='Cliente E2E'") === "cancelled/customer");
 await admin.reload();
+await admin.getByRole("button", { name: "Dia", exact: true }).click();
 await admin.locator("#agenda-date").fill(day);
 await admin.getByLabel("Mostrar canceladas").check();
 await admin.getByText("Cancelada").first().waitFor();
@@ -133,6 +143,7 @@ check("token inexistente mostra 'não encontrada'", true);
 
 check("sem erros na consola do navegador", consoleErrors.filter((e) => !/401|404|409/.test(e)).length === 0, consoleErrors.join(" | "));
 await browser.close();
+hookServer.close();
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} verificações OK`);
 process.exit(failed.length ? 1 : 0);

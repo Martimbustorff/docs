@@ -12,6 +12,7 @@ const TODO = <strong className="field-error">[A PREENCHER PELO RESPONSÁVEL]</st
 
 export default async function Privacidade() {
   const s = await getSettings(db());
+  const notify = process.env.NOTIFY_PROVIDER?.trim().toLowerCase();
   const missing = !s.legalName || !s.privacyEmail;
   return (
     <>
@@ -33,7 +34,7 @@ export default async function Privacidade() {
 
         <h2>Que dados tratamos</h2>
         <ul>
-          <li>Ao marcar: nome, telemóvel, email (opcional), serviço, profissional, data e hora, estado da marcação (confirmada, cancelada, concluída, falta).</li>
+          <li>Ao marcar: nome, telemóvel, serviço, profissional, data e hora, estado da marcação (confirmada, cancelada, concluída, falta). Não pedimos email nem criamos conta.</li>
           <li>Notas internas que o barbeiro registe sobre o atendimento, quando necessário.</li>
           <li>Para evitar abusos, um código irreversível derivado do endereço IP (não guardamos o IP em si), apagado ao fim de um dia.</li>
         </ul>
@@ -50,8 +51,18 @@ export default async function Privacidade() {
 
         <h2>Quem tem acesso</h2>
         <p>
-          Apenas a barbearia. Recorremos a prestadores técnicos que tratam dados em nosso nome (alojamento do site, base de dados e, se estiver ativo, envio de emails), obrigados a proteger os dados. Não vendemos nem cedemos dados a terceiros para outros fins.
+          Apenas a barbearia. Recorremos a prestadores técnicos que tratam dados em nosso nome (alojamento do site e base de dados), obrigados a proteger os dados. Não vendemos nem cedemos dados a terceiros para outros fins.
         </p>
+        {notify === "callmebot" && (
+          <p>
+            Sempre que há uma marcação (nova, cancelada ou remarcada), o nome, o telemóvel e a hora são enviados ao responsável por mensagem de WhatsApp, através do serviço CallMeBot (terceiro), para que a barbearia saiba de imediato.
+          </p>
+        )}
+        {notify === "webhook" && (
+          <p>
+            Sempre que há uma marcação (nova, cancelada ou remarcada), o nome, o telemóvel e a hora são enviados ao responsável através de um serviço de automação configurado pela barbearia.
+          </p>
+        )}
 
         <h2>Cookies e terceiros</h2>
         <p>

@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ApiClientError, api, dayParts, euro, longLisbon, shiftDate } from "../../client-api";
+import { ApiClientError, api, dayParts, longLisbon, shiftDate } from "../../client-api";
 
 interface View {
   status: "confirmed" | "completed" | "no_show" | "cancelled";
   serviceName: string;
-  priceCents: number;
   durationMin: number;
   staffName: string;
   startsAt: string;
@@ -150,7 +149,6 @@ export default function Manage(props: { token: string; isNew: boolean; today: st
         <dt>Estado</dt><dd><span className={`status ${view.status}`}>{STATUS[view.status]}</span></dd>
         <dt>Nome</dt><dd>{view.customerName}</dd>
         <dt>Serviço</dt><dd>{view.serviceName} · {view.durationMin} min</dd>
-        <dt>Preço</dt><dd>{euro(view.priceCents)} (pago na barbearia)</dd>
         <dt>Profissional</dt><dd>{view.staffName}</dd>
         <dt>Quando</dt><dd className="cap">{view.startLabel}</dd>
         <dt>Onde</dt><dd>{view.shop.name}, {view.shop.address}</dd>

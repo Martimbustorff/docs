@@ -61,10 +61,6 @@ export function hhmm(t: string): string {
   return t.slice(0, 5);
 }
 
-export function formatEuro(cents: number): string {
-  return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(cents / 100);
-}
-
 const WEEKDAYS_PT = ["", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"];
 export function weekdayName(n: number): string {
   return WEEKDAYS_PT[n] ?? "";

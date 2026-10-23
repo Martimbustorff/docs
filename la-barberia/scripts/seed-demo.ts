@@ -2,7 +2,7 @@ import "./_env";
 import postgres from "postgres";
 
 /**
- * Dados DEMONSTRATIVOS (serviços, preços, durações e horários provisórios). Não são dados reais da barbearia.
+ * Ponto de partida: profissional Carlos, um serviço de 30 minutos e um horário PROVISÓRIO (o horário real tem de ser confirmado pelo Carlos).
  * Por segurança, recusa correr numa base de dados remota sem --allow-remote e numa base que já tenha profissionais sem --force.
  */
 const url = process.env.DATABASE_URL;
@@ -28,11 +28,10 @@ try {
   }
   await sql.begin(async (t) => {
     const [carlos] = await t<{ id: string }[]>`insert into staff (name, sort_order) values ('Carlos', 0) returning id`;
-    await t`insert into services (name, description, price_cents, duration_min, sort_order, is_demo) values
-      ('Corte', 'Corte clássico ou moderno (valor provisório)', 1500, 30, 1, true),
-      ('Barba', 'Barba e cuidados masculinos (valor provisório)', 1000, 20, 2, true),
-      ('Corte + barba', 'Corte e barba (valor provisório)', 2200, 45, 3, true)`;
-    // Horário provisório: terça a sexta 09:30-13:00 e 14:30-19:00; sábado 09:30-17:00.
+    // Um único tipo de marcação, de 30 minutos (pedido do Carlos).
+    await t`insert into services (name, description, duration_min, sort_order) values
+      ('Corte de cabelo', '', 30, 1)`;
+    // Horário PROVISÓRIO: terça a sexta 09:30-13:00 e 14:30-19:00; sábado 09:30-17:00.
     for (const wd of [2, 3, 4, 5]) {
       await t`insert into working_hours (staff_id, weekday, start_time, end_time) values
         (${carlos.id}, ${wd}, '09:30', '13:00'), (${carlos.id}, ${wd}, '14:30', '19:00')`;
@@ -40,7 +39,7 @@ try {
     await t`insert into working_hours (staff_id, weekday, start_time, end_time) values (${carlos.id}, 6, '09:30', '17:00')`;
     await t`update settings set demo_mode = true where id`;
   });
-  console.log("Dados de demonstração inseridos (profissional Carlos, 3 serviços, horário provisório).");
+  console.log("Inseridos: profissional Carlos, serviço Corte de cabelo (30 min) e horário provisório.");
 } finally {
   await sql.end({ timeout: 5 });
 }

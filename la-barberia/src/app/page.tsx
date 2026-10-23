@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { getSettings, listActiveServices, listActiveStaff, listWorkingHours } from "@/lib/data";
-import { formatEuro } from "@/lib/time";
 import { instagramLink, mapsLink, prettyPhone, waLink, weeklySummary } from "@/lib/site";
 import { SiteHeader, DemoBanner } from "./site-chrome";
 
@@ -39,8 +38,8 @@ export default async function Home() {
 
         <section className="section" aria-labelledby="servicos">
           <div className="wrap narrow">
-            <h2 id="servicos">Serviços</h2>
-            <p className="muted">Cortes clássicos e modernos, barba e cuidados masculinos.</p>
+            <h2 id="servicos">Marcações</h2>
+            <p className="muted">Cortes clássicos e modernos, barba e cuidados masculinos. Cada marcação tem 30 minutos.</p>
             {services.length === 0 ? (
               <p className="muted">Em breve.</p>
             ) : (
@@ -53,13 +52,11 @@ export default async function Home() {
                         {s.durationMin} min{s.description ? ` · ${s.description}` : ""}
                       </span>
                     </div>
-                    <span className="price">{formatEuro(s.priceCents)}</span>
                   </li>
                 ))}
               </ul>
             )}
-            {settings.demoMode && <p className="muted small">Preços e durações provisórios, a confirmar pela barbearia.</p>}
-          </div>
+                      </div>
         </section>
 
         <section className="section" aria-labelledby="horario">

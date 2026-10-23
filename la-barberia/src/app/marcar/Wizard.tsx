@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ApiClientError, api, dayParts, euro, longLisbon, shiftDate } from "../client-api";
+import { ApiClientError, api, dayParts, longLisbon, shiftDate } from "../client-api";
 
-interface Service { id: string; name: string; description: string; priceCents: number; durationMin: number }
+interface Service { id: string; name: string; description: string; durationMin: number }
 interface Staff { id: string; name: string }
 interface Slot { startsAt: string; label: string }
 type Days = Record<string, Slot[]>;
@@ -30,10 +30,11 @@ export default function Wizard(props: {
 }) {
   const { services, staff, today, maxDate, shop } = props;
   const router = useRouter();
-  const steps: StepId[] = ["service", ...(staff.length > 1 ? (["staff"] as StepId[]) : []), "time", "details", "review"];
+  // Com um só serviço (o caso normal) o passo "Serviço" não aparece: dia, hora, dados, confirmar.
+  const steps: StepId[] = [...(services.length > 1 ? (["service"] as StepId[]) : []), ...(staff.length > 1 ? (["staff"] as StepId[]) : []), "time", "details", "review"];
 
-  const [step, setStep] = useState<StepId>("service");
-  const [serviceId, setServiceId] = useState<string>("");
+  const [step, setStep] = useState<StepId>(steps[0]);
+  const [serviceId, setServiceId] = useState<string>(services.length === 1 ? services[0].id : "");
   const [staffId, setStaffId] = useState<string>(staff.length > 1 ? "any" : staff[0].id);
   const [days, setDays] = useState<Days | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,11 +44,10 @@ export default function Wizard(props: {
   const [slot, setSlot] = useState<Slot | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
   const [website, setWebsite] = useState(""); // campo isco
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string; phone?: string; email?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; phone?: string }>({});
   const keyRef = useRef<string>("");
   const headingRef = useRef<HTMLHeadingElement>(null);
   const submittingRef = useRef(false);
@@ -103,7 +103,6 @@ export default function Wizard(props: {
     const errs: typeof fieldErrors = {};
     if (name.trim().length < 2) errs.name = "Indique o seu nome.";
     if (phone.replace(/\D/g, "").length < 9) errs.phone = "Indique um número de telemóvel válido.";
-    if (email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) errs.email = "Email inválido.";
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -121,7 +120,6 @@ export default function Wizard(props: {
           startsAt: slot.startsAt,
           name: name.trim(),
           phone: phone.trim(),
-          email: email.trim() || undefined,
           idempotencyKey: keyRef.current,
           website,
         },
@@ -175,7 +173,6 @@ export default function Wizard(props: {
                   <span className="name">{s.name}</span>
                   <span className="meta">{s.durationMin} min{s.description ? ` · ${s.description}` : ""}</span>
                 </span>
-                <span className="price">{euro(s.priceCents)}</span>
               </button>
             ))}
           </div>
@@ -272,11 +269,6 @@ export default function Wizard(props: {
             <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} aria-invalid={!!fieldErrors.phone} aria-describedby={fieldErrors.phone ? "e-phone" : undefined} maxLength={30} />
             {fieldErrors.phone && <span id="e-phone" className="field-error">{fieldErrors.phone}</span>}
           </div>
-          <div className="field">
-            <label htmlFor="email">Email (opcional) <span className="hint">Se indicar, enviamos-lhe o link da marcação (quando o envio de emails estiver ativo).</span></label>
-            <input id="email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={!!fieldErrors.email} aria-describedby={fieldErrors.email ? "e-email" : undefined} maxLength={120} />
-            {fieldErrors.email && <span id="e-email" className="field-error">{fieldErrors.email}</span>}
-          </div>
           <div className="trap" aria-hidden="true">
             <label htmlFor="website">Não preencha este campo</label>
             <input id="website" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
@@ -293,12 +285,10 @@ export default function Wizard(props: {
           <h2 id="h-review" ref={headingRef} tabIndex={-1}>Reveja e confirme</h2>
           <dl className="summary card">
             <dt>Serviço</dt><dd>{service.name} · {service.durationMin} min</dd>
-            <dt>Preço</dt><dd>{euro(service.priceCents)} (pago na barbearia)</dd>
             {staff.length > 1 && (<><dt>Profissional</dt><dd>{staffName}</dd></>)}
             <dt>Quando</dt><dd className="cap">{longLisbon(slot.startsAt)}</dd>
             <dt>Nome</dt><dd>{name.trim()}</dd>
             <dt>Telemóvel</dt><dd>{phone.trim()}</dd>
-            {email.trim() && (<><dt>Email</dt><dd>{email.trim()}</dd></>)}
           </dl>
           <p className="muted small">
             Poderá cancelar ou remarcar online até {shop.cancelDeadlineHours} h antes, através de um link privado que receberá no ecrã seguinte. Ao confirmar, aceita que tratemos estes dados apenas para gerir a marcação (ver <Link href="/privacidade">Privacidade</Link>).

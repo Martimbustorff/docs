@@ -24,7 +24,7 @@ export default async function MarcarPage() {
         <h1 style={{ fontSize: "2.2rem" }}>Marcar</h1>
         {open ? (
           <Wizard
-            services={services.map((s) => ({ id: s.id, name: s.name, description: s.description, priceCents: s.priceCents, durationMin: s.durationMin }))}
+            services={services.map((s) => ({ id: s.id, name: s.name, description: s.description, durationMin: s.durationMin }))}
             staff={staff.map((s) => ({ id: s.id, name: s.name }))}
             today={today}
             maxDate={addDays(today, settings.horizonDays)}

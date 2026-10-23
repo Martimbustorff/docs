@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, dayParts, euro, mondayOf, shiftDate } from "../../client-api";
+import { api, dayParts, mondayOf, shiftDate } from "../../client-api";
 
 interface Entry {
   id: string;
@@ -15,10 +15,8 @@ interface Entry {
   blockGroup: string | null;
   reason: string | null;
   serviceName: string | null;
-  priceCents: number | null;
   customerName: string | null;
   customerPhone: string | null;
-  customerEmail: string | null;
   notes: string | null;
   source: "online" | "phone" | "whatsapp" | "walk_in" | null;
   rescheduleCount: number;
@@ -32,8 +30,8 @@ const BLOCK: Record<string, string> = { block: "Bloqueio", vacation: "Férias", 
 const hm = (s: string) => s.slice(11, 16);
 const dayOf = (s: string) => s.slice(0, 10);
 
-export default function Agenda({ today, staff, services }: { today: string; staff: Staff[]; services: Service[] }) {
-  const [view, setView] = useState<"day" | "week">("day");
+export default function Agenda({ today, nowLocal, staff, services }: { today: string; nowLocal: string; staff: Staff[]; services: Service[] }) {
+  const [view, setView] = useState<"upcoming" | "day" | "week">("upcoming");
   const [date, setDate] = useState(today);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +39,15 @@ export default function Agenda({ today, staff, services }: { today: string; staf
   const [message, setMessage] = useState<string | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
 
-  const range = useMemo(() => (view === "day" ? { from: date, to: date } : { from: mondayOf(date), to: shiftDate(mondayOf(date), 6) }), [view, date]);
+  const range = useMemo(
+    () =>
+      view === "upcoming"
+        ? { from: today, to: shiftDate(today, 61) }
+        : view === "day"
+          ? { from: date, to: date }
+          : { from: mondayOf(date), to: shiftDate(mondayOf(date), 6) },
+    [view, date, today],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,6 +64,9 @@ export default function Agenda({ today, staff, services }: { today: string; staf
 
   useEffect(() => {
     load();
+    // Atualiza sozinha de minuto a minuto para as marcações novas aparecerem sem recarregar a página.
+    const id = setInterval(() => document.visibilityState === "visible" && load(), 60_000);
+    return () => clearInterval(id);
   }, [load]);
 
   async function run(fn: () => Promise<unknown>, ok?: string) {
@@ -84,13 +93,18 @@ export default function Agenda({ today, staff, services }: { today: string; staf
       <h1 style={{ fontSize: "2rem" }}>Agenda</h1>
 
       <div className="toolbar" role="group" aria-label="Navegação da agenda">
-        <button className="btn secondary small" type="button" onClick={() => setDate(shiftDate(date, view === "day" ? -1 : -7))}>← Anterior</button>
-        <button className="btn secondary small" type="button" onClick={() => setDate(today)}>Hoje</button>
-        <button className="btn secondary small" type="button" onClick={() => setDate(shiftDate(date, view === "day" ? 1 : 7))}>Seguinte →</button>
-        <label className="sr-only" htmlFor="agenda-date">Ir para a data</label>
-        <input id="agenda-date" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+        <button className={`btn small ${view === "upcoming" ? "" : "secondary"}`} type="button" aria-pressed={view === "upcoming"} onClick={() => setView("upcoming")}>Próximas</button>
         <button className={`btn small ${view === "day" ? "" : "secondary"}`} type="button" aria-pressed={view === "day"} onClick={() => setView("day")}>Dia</button>
         <button className={`btn small ${view === "week" ? "" : "secondary"}`} type="button" aria-pressed={view === "week"} onClick={() => setView("week")}>Semana</button>
+        {view !== "upcoming" && (
+          <>
+            <button className="btn secondary small" type="button" onClick={() => setDate(shiftDate(date, view === "day" ? -1 : -7))}>← Anterior</button>
+            <button className="btn secondary small" type="button" onClick={() => setDate(today)}>Hoje</button>
+            <button className="btn secondary small" type="button" onClick={() => setDate(shiftDate(date, view === "day" ? 1 : 7))}>Seguinte →</button>
+            <label className="sr-only" htmlFor="agenda-date">Ir para a data</label>
+            <input id="agenda-date" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+          </>
+        )}
         <label className="check" style={{ marginLeft: ".5rem" }}>
           <input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> Mostrar canceladas
         </label>
@@ -102,11 +116,13 @@ export default function Agenda({ today, staff, services }: { today: string; staf
       </div>
 
       <h2 className="cap">
-        {view === "day" ? dayLabel(date) : `${dayLabel(range.from)} – ${dayLabel(range.to)}`}
+        {view === "upcoming" ? "Próximas marcações" : view === "day" ? dayLabel(date) : `${dayLabel(range.from)} – ${dayLabel(range.to)}`}
       </h2>
       {loading && <p role="status">A carregar…</p>}
 
-      {view === "day" ? (
+      {view === "upcoming" ? (
+        <Upcoming entries={entries.filter((e) => e.kind === "appointment" && e.status === "confirmed" && e.endLocal > nowLocal)} today={today} staff={staff} onRun={run} />
+      ) : view === "day" ? (
         <DayList entries={forDay(date)} staff={staff} onRun={run} />
       ) : (
         <div className="week">
@@ -132,6 +148,23 @@ export default function Agenda({ today, staff, services }: { today: string; staf
         <NewAppointment staff={staff} services={services} date={date} onDone={(msg) => run(async () => {}, msg)} />
         <NewBlock staff={staff} date={date} onDone={(msg) => run(async () => {}, msg)} />
       </div>
+    </div>
+  );
+}
+
+function Upcoming({ entries, today, staff, onRun }: { entries: Entry[]; today: string; staff: Staff[]; onRun: (fn: () => Promise<unknown>, ok?: string) => Promise<boolean> }) {
+  if (entries.length === 0) return <p className="card muted">Sem marcações futuras. Quando alguém marcar, aparece aqui (a lista atualiza sozinha).</p>;
+  const days = [...new Set(entries.map((e) => e.startLocal.slice(0, 10)))];
+  const title = (d: string) => (d === today ? "Hoje" : d === shiftDate(today, 1) ? "Amanhã" : dayParts(d).long);
+  return (
+    <div className="stack">
+      <p className="muted small">{entries.length} marcação(ões) confirmada(s) nos próximos 60 dias, por ordem cronológica.</p>
+      {days.map((d) => (
+        <section key={d} aria-label={title(d)}>
+          <h3 className="cap">{title(d)}{title(d) === "Hoje" || title(d) === "Amanhã" ? <span className="muted"> · {dayParts(d).long}</span> : null}</h3>
+          {entries.filter((e) => e.startLocal.startsWith(d)).map((e) => <AppointmentCard key={e.id} e={e} staff={staff} onRun={onRun} />)}
+        </section>
+      ))}
     </div>
   );
 }
@@ -187,12 +220,11 @@ function AppointmentCard({ e, staff, onRun }: { e: Entry; staff: Staff[]; onRun:
         <span className="muted small">{SOURCE[e.source ?? ""] ?? e.source}{e.rescheduleCount ? ` · remarcada ${e.rescheduleCount}×` : ""}</span>
       </div>
       <div>
-        <strong>{e.customerName}</strong> · {e.serviceName} {e.priceCents != null && <span className="muted">({euro(e.priceCents)})</span>}
+        <strong>{e.customerName}</strong> · {e.serviceName}
         <br />
         {e.customerPhone && (
           <span className="small">
             <a href={`tel:${e.customerPhone}`}>{e.customerPhone}</a> · <a href={wa} target="_blank" rel="noopener noreferrer">WhatsApp</a>
-            {e.customerEmail ? ` · ${e.customerEmail}` : ""}
           </span>
         )}
         {e.notes && !editNotes && <p className="small" style={{ margin: ".4rem 0 0" }}>Nota: {e.notes}</p>}
@@ -249,7 +281,6 @@ function NewAppointment({ staff, services, date, onDone }: { staff: Staff[]; ser
   const [t, setT] = useState("10:00");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [source, setSource] = useState("phone");
   const [error, setError] = useState<string | null>(null);
@@ -264,10 +295,10 @@ function NewAppointment({ staff, services, date, onDone }: { staff: Staff[]; ser
     setLink(null);
     try {
       const r = await api<{ link: string }>("/api/admin/appointments", {
-        body: { serviceId, staffId, start: `${d}T${t}`, name, phone, email: email || undefined, notes: notes || undefined, source },
+        body: { serviceId, staffId, start: `${d}T${t}`, name, phone, notes: notes || undefined, source },
       });
       setLink(r.link);
-      setName(""); setPhone(""); setEmail(""); setNotes("");
+      setName(""); setPhone(""); setNotes("");
       onDone("Marcação criada.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro.");
@@ -292,7 +323,6 @@ function NewAppointment({ staff, services, date, onDone }: { staff: Staff[]; ser
           <div className="field"><label htmlFor="na-time">Hora</label><input id="na-time" type="time" step={300} value={t} onChange={(e) => setT(e.target.value)} required /></div>
           <div className="field"><label htmlFor="na-name">Nome</label><input id="na-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} /></div>
           <div className="field"><label htmlFor="na-phone">Telemóvel</label><input id="na-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required /></div>
-          <div className="field"><label htmlFor="na-email">Email (opcional)</label><input id="na-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
           <div className="field"><label htmlFor="na-source">Origem</label>
             <select id="na-source" value={source} onChange={(e) => setSource(e.target.value)}><option value="phone">Telefone</option><option value="whatsapp">WhatsApp</option><option value="walk_in">Presencial</option></select></div>
         </div>

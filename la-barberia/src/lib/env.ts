@@ -12,8 +12,10 @@ export function env() {
     APP_SECRET: appSecret,
     PUBLIC_BASE_URL: (process.env.PUBLIC_BASE_URL?.trim() || "http://localhost:3000").replace(/\/+$/, ""),
     CRON_SECRET: process.env.CRON_SECRET?.trim() || "",
-    RESEND_API_KEY: process.env.RESEND_API_KEY?.trim() || "",
-    EMAIL_FROM: process.env.EMAIL_FROM?.trim() || "",
+    NOTIFY_PROVIDER: process.env.NOTIFY_PROVIDER?.trim().toLowerCase() || "",
+    CALLMEBOT_PHONE: process.env.CALLMEBOT_PHONE?.trim() || "",
+    CALLMEBOT_APIKEY: process.env.CALLMEBOT_APIKEY?.trim() || "",
+    NOTIFY_WEBHOOK_URL: process.env.NOTIFY_WEBHOOK_URL?.trim() || "",
     IS_PROD: process.env.NODE_ENV === "production",
   };
 }

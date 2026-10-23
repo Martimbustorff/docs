@@ -11,7 +11,7 @@ export async function getSettings(q: DB): Promise<Settings> {
 }
 
 export async function listActiveServices(q: DB): Promise<ServiceRow[]> {
-  return q<ServiceRow[]>`select id, name, description, price_cents, duration_min, active, sort_order, is_demo
+  return q<ServiceRow[]>`select id, name, description, duration_min, active, sort_order, is_demo
     from services where active order by sort_order, name`;
 }
 

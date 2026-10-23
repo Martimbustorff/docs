@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, db } from "../src/lib/db";
 import { ApiError } from "../src/lib/errors";
 import {
@@ -10,7 +10,7 @@ import {
   publicAvailability,
   rescheduleByToken,
 } from "../src/lib/bookings";
-import { createAdminAppointment, createBlocks, deleteBlock, patchAppointment } from "../src/lib/admin";
+import { createAdminAppointment, createBlocks, deleteBlock, listEntries, patchAppointment } from "../src/lib/admin";
 import { NOW, WED, Seed, bookingInput, ip, resetDb, seed, uniqueKey } from "./helpers";
 
 let s: Seed;
@@ -35,10 +35,10 @@ beforeEach(async () => {
 
 describe("criar e consultar marcações", () => {
   it("guarda a marcação na base de dados e o link privado mostra-a", async () => {
-    const created = await book({ email: "joao@example.com" });
+    const created = await book();
     expect(created.replay).toBe(false);
-    const [row] = await db()`select status, source, customer_name, customer_email, price_cents, duration_min from calendar_entries`;
-    expect(row).toMatchObject({ status: "confirmed", source: "online", customerName: "João Silva", priceCents: 1500, durationMin: 30 });
+    const [row] = await db()`select status, source, customer_name, duration_min from calendar_entries`;
+    expect(row).toMatchObject({ status: "confirmed", source: "online", customerName: "João Silva", durationMin: 30 });
 
     const view = await getBookingView(created.token, { ipHash: ip(), now: NOW });
     expect(view).toMatchObject({ serviceName: "Corte", staffName: "Carlos", status: "confirmed", canModify: true, customerName: "João Silva" });
@@ -86,9 +86,9 @@ describe("criar e consultar marcações", () => {
   });
 
   it("não expõe dados pessoais na disponibilidade pública", async () => {
-    await book({ name: "Zé Segredo", phone: "+351933333333", email: "ze@example.com" });
+    await book({ name: "Zé Segredo", phone: "+351933333333" });
     const res = JSON.stringify(await publicAvailability(db(), { serviceId: s.corte, staffId: "any", from: WED, to: "2026-10-31", now: NOW }));
-    expect(res).not.toMatch(/Segredo|933333333|ze@example/);
+    expect(res).not.toMatch(/Segredo|933333333/);
     expect(res).not.toContain(s.carlos);
   });
 });
@@ -318,5 +318,92 @@ describe("proteção contra abuso", () => {
     ).rejects.toMatchObject({ code: "23P01" });
     // encostado (fim == início) é permitido
     await q`insert into calendar_entries (kind, staff_id, starts_at, ends_at, block_kind) values ('block', ${s.carlos}, '2026-10-21T10:00:00Z', '2026-10-21T10:30:00Z', 'block')`;
+  });
+});
+
+describe("notificação ao Carlos e lista cronológica", () => {
+  const fetchCalls: string[] = [];
+  const realFetch = globalThis.fetch;
+  const mockFetch = (impl: (url: string) => Promise<Response>) => {
+    fetchCalls.length = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      fetchCalls.push(url);
+      return impl(url);
+    }) as typeof fetch;
+  };
+  const withNotify = (env: Record<string, string>) => {
+    Object.assign(process.env, env);
+  };
+  const clearNotify = () => {
+    for (const k of ["NOTIFY_PROVIDER", "CALLMEBOT_PHONE", "CALLMEBOT_APIKEY", "NOTIFY_WEBHOOK_URL"]) delete process.env[k];
+    globalThis.fetch = realFetch;
+  };
+  afterEach(clearNotify);
+
+  it("sem fornecedor configurado, não chama nenhum serviço externo", async () => {
+    mockFetch(async () => new Response("ok"));
+    await book();
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  it("CallMeBot: uma nova marcação envia nome, telemóvel e hora ao WhatsApp do Carlos", async () => {
+    withNotify({ NOTIFY_PROVIDER: "callmebot", CALLMEBOT_PHONE: "+351961916045", CALLMEBOT_APIKEY: "chave123" });
+    mockFetch(async () => new Response("ok"));
+    await book({ name: "Rui Pereira", phone: "+351912345678" });
+    expect(fetchCalls).toHaveLength(1);
+    const u = new URL(fetchCalls[0]);
+    expect(u.origin + u.pathname).toBe("https://api.callmebot.com/whatsapp.php");
+    expect(u.searchParams.get("phone")).toBe("+351961916045");
+    expect(u.searchParams.get("apikey")).toBe("chave123");
+    const text = u.searchParams.get("text")!;
+    expect(text).toContain("Nova marcação");
+    expect(text).toContain("Rui Pereira");
+    expect(text).toContain("+351912345678");
+    expect(text).toContain("10:30"); // hora de Lisboa
+  });
+
+  it("um pedido repetido (mesma chave) não volta a notificar", async () => {
+    withNotify({ NOTIFY_PROVIDER: "callmebot", CALLMEBOT_PHONE: "+351961916045", CALLMEBOT_APIKEY: "k" });
+    mockFetch(async () => new Response("ok"));
+    const key = uniqueKey();
+    await book({ idempotencyKey: key });
+    await book({ idempotencyKey: key });
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  it("se o serviço de notificação falhar (erro de rede ou HTTP 500), a marcação fica guardada", async () => {
+    withNotify({ NOTIFY_PROVIDER: "callmebot", CALLMEBOT_PHONE: "+351961916045", CALLMEBOT_APIKEY: "k" });
+    mockFetch(async () => { throw new Error("rede em baixo"); });
+    expect(await code(book())).toBe("OK");
+    mockFetch(async () => new Response("erro", { status: 500 }));
+    expect(await code(book({ startsAt: "2026-10-22T09:30:00.000Z" }))).toBe("OK");
+    const [{ n }] = await db()`select count(*)::int as n from calendar_entries`;
+    expect(n).toBe(2);
+  });
+
+  it("cancelar e remarcar pelo cliente também avisam o Carlos (e não expõem a chave nos logs)", async () => {
+    withNotify({ NOTIFY_PROVIDER: "webhook", NOTIFY_WEBHOOK_URL: "https://hooks.example/abc" });
+    mockFetch(async () => new Response("ok"));
+    const { token } = await book();
+    await rescheduleByToken(token, "2026-10-22T09:30:00.000Z", { ipHash: ip(), now: NOW });
+    await cancelByToken(token, { ipHash: ip(), now: NOW });
+    await cancelByToken(token, { ipHash: ip(), now: NOW }); // repetido: sem nova mensagem
+    expect(fetchCalls).toHaveLength(3); // nova, remarcada, cancelada
+  });
+
+  it("lista cronológica: o painel recebe as marcações por ordem de hora, qualquer que seja a ordem de criação", async () => {
+    for (const t of ["15:00", "10:00", "12:00"]) {
+      await createAdminAppointment(db(), { serviceId: s.corte, staffId: s.carlos, start: `${WED}T${t}`, name: `C${t}`, phone: "+351911000001", source: "phone" });
+    }
+    const list = (await listEntries(db(), WED, WED)).filter((e) => e.kind === "appointment");
+    expect(list.map((e) => e.startLocal.slice(11))).toEqual(["10:00", "12:00", "15:00"]);
+  });
+
+  it("o intervalo entre horas por omissão é de 30 minutos e não há preços nem emails na base de dados", async () => {
+    const [c] = await db()`select column_default from information_schema.columns where table_name = 'settings' and column_name = 'slot_step_minutes'`;
+    expect(c.columnDefault).toBe("30");
+    const cols = await db()`select table_name, column_name from information_schema.columns where table_schema = 'public' and (column_name like '%price%' or column_name = 'customer_email')`;
+    expect(cols).toEqual([]);
   });
 });

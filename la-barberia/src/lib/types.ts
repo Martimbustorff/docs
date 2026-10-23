@@ -21,7 +21,6 @@ export interface ServiceRow {
   id: string;
   name: string;
   description: string;
-  priceCents: number;
   durationMin: number;
   active: boolean;
   sortOrder: number;
@@ -54,11 +53,9 @@ export interface EntryRow {
   reason: string | null;
   serviceId: string | null;
   serviceName: string | null;
-  priceCents: number | null;
   durationMin: number | null;
   customerName: string | null;
   customerPhone: string | null;
-  customerEmail: string | null;
   notes: string | null;
   source: "online" | "phone" | "whatsapp" | "walk_in" | null;
   rescheduleCount: number;

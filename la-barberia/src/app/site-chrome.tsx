@@ -5,7 +5,7 @@ export function DemoBanner({ settings }: { settings: Pick<Settings, "demoMode"> 
   if (!settings.demoMode) return null;
   return (
     <div className="demo-banner" role="note">
-      Versão de demonstração: serviços, preços e horários são provisórios.
+      Versão de demonstração: o horário é provisório.
     </div>
   );
 }

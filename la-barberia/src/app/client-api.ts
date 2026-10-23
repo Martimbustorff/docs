@@ -52,7 +52,5 @@ export function mondayOf(date: string): string {
   return shiftDate(date, -((wd + 6) % 7));
 }
 
-export const euro = (cents: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(cents / 100);
-
 export const longLisbon = (iso: string) =>
   new Intl.DateTimeFormat("pt-PT", { dateStyle: "full", timeStyle: "short", timeZone: "Europe/Lisbon" }).format(new Date(iso));

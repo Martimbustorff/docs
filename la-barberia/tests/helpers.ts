@@ -14,6 +14,8 @@ export async function resetDb() {
   await q`truncate calendar_entries, working_hours, services, staff, admin_sessions, admins, rate_limits restart identity cascade`;
   await q`delete from settings`;
   await q`insert into settings default values`;
+  // Os testes de disponibilidade usam passos de 15 minutos; o valor por omissão do produto (30) tem teste próprio.
+  await q`update settings set slot_step_minutes = 15`;
 }
 
 export interface Seed {
@@ -41,11 +43,11 @@ export async function seed(opts: { second?: boolean } = {}): Promise<Seed> {
     }
     await q`insert into working_hours (staff_id, weekday, start_time, end_time) values (${s}, 6, '09:30', '17:00')`;
   }
-  const svc = async (name: string, price: number, dur: number) =>
-    (await q<{ id: string }[]>`insert into services (name, price_cents, duration_min) values (${name}, ${price}, ${dur}) returning id`)[0].id;
-  out.corte = await svc("Corte", 1500, 30);
-  out.barba = await svc("Barba", 1000, 20);
-  out.combo = await svc("Corte + barba", 2200, 45);
+  const svc = async (name: string, dur: number) =>
+    (await q<{ id: string }[]>`insert into services (name, duration_min) values (${name}, ${dur}) returning id`)[0].id;
+  out.corte = await svc("Corte", 30);
+  out.barba = await svc("Barba", 20); // durações diferentes servem para testar o cálculo de vagas
+  out.combo = await svc("Corte + barba", 45);
   return out;
 }
 

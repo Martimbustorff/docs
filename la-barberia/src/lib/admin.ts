@@ -64,7 +64,7 @@ async function describeConflicts(q: DB, staffIds: string[], start: Date, end: Da
 
 export async function createAdminAppointment(q: DB, input: z.infer<typeof adminAppointmentInput>) {
   const start = parseStart(input.start);
-  const [service] = await q<ServiceRow[]>`select id, name, price_cents, duration_min from services where id = ${input.serviceId}`;
+  const [service] = await q<ServiceRow[]>`select id, name, duration_min from services where id = ${input.serviceId}`;
   if (!service) throw Errors.notFound("Serviço não encontrado.");
   const [staff] = await q<StaffRow[]>`select id from staff where id = ${input.staffId} and active`;
   if (!staff) throw Errors.notFound("Profissional não encontrado.");
@@ -75,10 +75,10 @@ export async function createAdminAppointment(q: DB, input: z.infer<typeof adminA
       await lockStaff(t, [input.staffId]);
       const [row] = await t<EntryRow[]>`
         insert into calendar_entries
-          (kind, staff_id, starts_at, ends_at, status, service_id, service_name, price_cents, duration_min,
-           customer_name, customer_phone, customer_email, notes, source, token_hash)
-        values ('appointment', ${input.staffId}, ${start}, ${end}, 'confirmed', ${service.id}, ${service.name}, ${service.priceCents},
-                ${service.durationMin}, ${input.name}, ${input.phone}, ${input.email ?? null}, ${input.notes ?? null}, ${input.source}, ${sha256(token)})
+          (kind, staff_id, starts_at, ends_at, status, service_id, service_name, duration_min,
+           customer_name, customer_phone, notes, source, token_hash)
+        values ('appointment', ${input.staffId}, ${start}, ${end}, 'confirmed', ${service.id}, ${service.name},
+                ${service.durationMin}, ${input.name}, ${input.phone}, ${input.notes ?? null}, ${input.source}, ${sha256(token)})
         returning *`;
       return row;
     });
@@ -168,24 +168,24 @@ export async function deleteBlock(q: DB, group: string) {
 /* ------------------------------------------------------------------ serviços */
 
 export async function listServices(q: DB): Promise<ServiceRow[]> {
-  return q<ServiceRow[]>`select id, name, description, price_cents, duration_min, active, sort_order, is_demo from services order by sort_order, name`;
+  return q<ServiceRow[]>`select id, name, description, duration_min, active, sort_order, is_demo from services order by sort_order, name`;
 }
 
 export async function createService(q: DB, i: z.infer<typeof serviceInput>) {
   const [row] = await q<ServiceRow[]>`
-    insert into services (name, description, price_cents, duration_min, active, sort_order)
-    values (${i.name}, ${i.description}, ${i.priceCents}, ${i.durationMin}, ${i.active}, ${i.sortOrder})
-    returning id, name, description, price_cents, duration_min, active, sort_order, is_demo`;
+    insert into services (name, description, duration_min, active, sort_order)
+    values (${i.name}, ${i.description}, ${i.durationMin}, ${i.active}, ${i.sortOrder})
+    returning id, name, description, duration_min, active, sort_order, is_demo`;
   return row;
 }
 
 export async function updateService(q: DB, id: string, i: z.infer<typeof serviceInput>) {
   // Ao editar um serviço de demonstração, passa a ser um dado real do Carlos.
   const [row] = await q<ServiceRow[]>`
-    update services set name = ${i.name}, description = ${i.description}, price_cents = ${i.priceCents},
+    update services set name = ${i.name}, description = ${i.description},
       duration_min = ${i.durationMin}, active = ${i.active}, sort_order = ${i.sortOrder}, is_demo = false
     where id = ${id}
-    returning id, name, description, price_cents, duration_min, active, sort_order, is_demo`;
+    returning id, name, description, duration_min, active, sort_order, is_demo`;
   if (!row) throw Errors.notFound();
   return row;
 }
@@ -270,19 +270,17 @@ export async function exportCsv(q: DB, from: string, to: string): Promise<string
     where e.kind = 'appointment' and e.starts_at >= ${startOfLocalDay(from)} and e.starts_at < ${endOfLocalDay(toClamped)}
     order by e.starts_at`;
   return toCsv(
-    ["data", "inicio", "fim", "profissional", "servico", "preco_eur", "estado", "origem", "nome", "telemovel", "email", "notas", "criada_em_utc"],
+    ["data", "inicio", "fim", "profissional", "servico", "estado", "origem", "nome", "telemovel", "notas", "criada_em_utc"],
     rows.map((r) => [
       localDate(r.startsAt),
       localTime(r.startsAt),
       localTime(r.endsAt),
       r.staffName,
       r.serviceName,
-      ((r.priceCents ?? 0) / 100).toFixed(2).replace(".", ","),
       STATUS_PT[r.status] ?? r.status,
       SOURCE_PT[r.source ?? ""] ?? r.source,
       r.customerName,
       r.customerPhone,
-      r.customerEmail,
       r.notes,
       r.createdAt.toISOString(),
     ]),

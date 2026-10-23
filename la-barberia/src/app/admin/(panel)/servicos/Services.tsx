@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { api } from "../../../client-api";
 
-interface Svc { id: string; name: string; description: string; priceCents: number; durationMin: number; active: boolean; sortOrder: number; isDemo: boolean }
-
-const toCents = (v: string) => Math.round(parseFloat(v.replace(",", ".")) * 100);
-const toEuros = (c: number) => (c / 100).toFixed(2).replace(".", ",");
+interface Svc { id: string; name: string; description: string; durationMin: number; active: boolean; sortOrder: number; isDemo: boolean }
 
 export default function Services({ initial }: { initial: Svc[] }) {
   const [items, setItems] = useState<Svc[]>(initial);
@@ -20,7 +17,7 @@ export default function Services({ initial }: { initial: Svc[] }) {
   return (
     <div className="stack">
       <h1 style={{ fontSize: "2rem" }}>Serviços</h1>
-      <p className="muted">Estes serviços, preços e durações aparecem no site e determinam as vagas. Ao guardar um serviço de demonstração, ele passa a ser um serviço real.</p>
+      <p className="muted">Estes serviços e durações aparecem no site e determinam as vagas (por omissão há só um: &quot;Corte de cabelo&quot;, 30 minutos). Ao guardar um serviço de demonstração, ele passa a ser um serviço real.</p>
       <div aria-live="polite">
         {error && <div className="error" role="alert">{error}</div>}
         {message && <div className="ok" role="status">{message}</div>}
@@ -28,7 +25,7 @@ export default function Services({ initial }: { initial: Svc[] }) {
       {items.map((s) => (
         <Row key={s.id} s={s} onError={setError} onMessage={setMessage} onChanged={reload} />
       ))}
-      <Row s={{ id: "", name: "", description: "", priceCents: 0, durationMin: 30, active: true, sortOrder: items.length + 1, isDemo: false }} isNew onError={setError} onMessage={setMessage} onChanged={reload} />
+      <Row s={{ id: "", name: "", description: "", durationMin: 30, active: true, sortOrder: items.length + 1, isDemo: false }} isNew onError={setError} onMessage={setMessage} onChanged={reload} />
     </div>
   );
 }
@@ -36,7 +33,6 @@ export default function Services({ initial }: { initial: Svc[] }) {
 function Row({ s, isNew, onError, onMessage, onChanged }: { s: Svc; isNew?: boolean; onError: (m: string | null) => void; onMessage: (m: string | null) => void; onChanged: () => Promise<void> }) {
   const [name, setName] = useState(s.name);
   const [description, setDescription] = useState(s.description);
-  const [price, setPrice] = useState(isNew ? "" : toEuros(s.priceCents));
   const [duration, setDuration] = useState(String(s.durationMin));
   const [active, setActive] = useState(s.active);
   const [order, setOrder] = useState(String(s.sortOrder));
@@ -46,15 +42,13 @@ function Row({ s, isNew, onError, onMessage, onChanged }: { s: Svc; isNew?: bool
     e.preventDefault();
     onError(null);
     onMessage(null);
-    const priceCents = toCents(price);
-    if (!Number.isFinite(priceCents)) return onError("Preço inválido.");
     setBusy(true);
     try {
-      const body = { name, description, priceCents, durationMin: Number(duration), active, sortOrder: Number(order) };
+      const body = { name, description, durationMin: Number(duration), active, sortOrder: Number(order) };
       if (isNew) await api("/api/admin/services", { body });
       else await api(`/api/admin/services/${s.id}`, { method: "PUT", body });
       onMessage(isNew ? "Serviço criado." : "Serviço guardado.");
-      if (isNew) { setName(""); setDescription(""); setPrice(""); }
+      if (isNew) { setName(""); setDescription(""); }
       await onChanged();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Erro.");
@@ -83,7 +77,6 @@ function Row({ s, isNew, onError, onMessage, onChanged }: { s: Svc; isNew?: bool
       </div>
       <div className="grid2">
         <div className="field"><label htmlFor={`n-${s.id}`}>Nome</label><input id={`n-${s.id}`} value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} /></div>
-        <div className="field"><label htmlFor={`p-${s.id}`}>Preço (€)</label><input id={`p-${s.id}`} inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required /></div>
         <div className="field"><label htmlFor={`d-${s.id}`}>Duração (minutos)</label><input id={`d-${s.id}`} type="number" min={5} max={480} step={5} value={duration} onChange={(e) => setDuration(e.target.value)} required /></div>
         <div className="field"><label htmlFor={`o-${s.id}`}>Ordem</label><input id={`o-${s.id}`} type="number" min={0} max={1000} value={order} onChange={(e) => setOrder(e.target.value)} /></div>
       </div>

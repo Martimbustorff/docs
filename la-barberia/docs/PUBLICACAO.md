@@ -31,7 +31,7 @@ Supabase: a aplicação liga-se diretamente ao Postgres; as tabelas têm RLS ati
 | `PUBLIC_BASE_URL` | sim | URL final, sem `/` no fim |
 | `CRON_SECRET` | recomendada | Protege `/api/cron/maintenance` |
 | `DB_POOL_MAX` | não | Use 1–3 em alojamento *serverless* |
-| `RESEND_API_KEY`, `EMAIL_FROM` | não | Email opcional; sem isto não se enviam emails |
+| `NOTIFY_PROVIDER`, `CALLMEBOT_PHONE`, `CALLMEBOT_APIKEY` | não | Aviso por WhatsApp ao Carlos ([NOTIFICACOES.md](NOTIFICACOES.md)); sem isto não há avisos |
 
 Nunca faça commit de `.env.local`. O repositório só tem `.env.example`.
 
@@ -64,7 +64,8 @@ Comece com o subdomínio gratuito do alojamento. Um domínio próprio é opciona
 
 - [ ] Morada e WhatsApp confirmados com o Carlos (Definições → "Confirmo…")
 - [ ] Nome/firma, NIF e email de privacidade preenchidos; texto da página de privacidade revisto
-- [ ] Serviços, preços, durações e horários reais; modo de demonstração desligado
+- [ ] Horário real confirmado pelo Carlos; modo de demonstração desligado
+- [ ] Aviso por WhatsApp ativado e testado (opcional)
 - [ ] Regras (antecedência, prazo de cancelamento, horizonte) acordadas com o Carlos
 - [ ] `APP_SECRET`/`CRON_SECRET` definidos; administrador criado e palavra-passe alterada
 - [ ] Tarefa diária agendada; cópia de segurança agendada e **restauro testado** ([BACKUPS.md](BACKUPS.md))

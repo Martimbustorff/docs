@@ -2,6 +2,7 @@ import { DB, db, isOverlapError, lockStaff, pgConstraint, pgErrorCode, tx } from
 import { Errors } from "./errors";
 import { PublicSlot, loadSlots, mergeSlots } from "./availability";
 import { getSettings, listActiveStaff } from "./data";
+import { notifyOwner } from "./notify";
 import { rateLimit } from "./ratelimit";
 import { bookingTokenFromKey, sha256 } from "./tokens";
 import { addDays, formatLongPt, localDate } from "./time";
@@ -74,7 +75,7 @@ export async function createOnlineBooking(input: PublicBookingInput, ctx: { ipHa
   if (!settings.onlineBookingOpen) throw Errors.closed();
 
   const [service] = await q<ServiceRow[]>`
-    select id, name, price_cents, duration_min from services where id = ${input.serviceId} and active`;
+    select id, name, duration_min from services where id = ${input.serviceId} and active`;
   if (!service) throw Errors.notFound("Serviço não encontrado.");
 
   const [{ count }] = await q<{ count: number }[]>`
@@ -94,14 +95,16 @@ export async function createOnlineBooking(input: PublicBookingInput, ctx: { ipHa
         await assertSlotAvailable(t, { staffId, startsAt, durationMin: service.durationMin, settings, now });
         const [row] = await t<EntryRow[]>`
           insert into calendar_entries
-            (kind, staff_id, starts_at, ends_at, status, service_id, service_name, price_cents, duration_min,
-             customer_name, customer_phone, customer_email, source, token_hash, idempotency_key)
+            (kind, staff_id, starts_at, ends_at, status, service_id, service_name, duration_min,
+             customer_name, customer_phone, source, token_hash, idempotency_key)
           values ('appointment', ${staffId}, ${startsAt}, ${new Date(startsAt.getTime() + service.durationMin * 60_000)}, 'confirmed',
-                  ${service.id}, ${service.name}, ${service.priceCents}, ${service.durationMin},
-                  ${input.name}, ${input.phone}, ${input.email ?? null}, 'online', ${sha256(token)}, ${input.idempotencyKey})
+                  ${service.id}, ${service.name}, ${service.durationMin},
+                  ${input.name}, ${input.phone}, 'online', ${sha256(token)}, ${input.idempotencyKey})
           returning *`;
         return row;
       });
+      // Aviso ao Carlos (WhatsApp). Depois de a marcação estar guardada; nunca falha o pedido.
+      await notifyOwner("new", entry);
       return { entry, token, replay: false };
     } catch (e) {
       if (isOverlapError(e) || e instanceof SlotUnavailable) continue; // outro profissional, se "sem preferência"
@@ -171,7 +174,6 @@ async function assertSlotAvailable(
 export interface PublicBookingView {
   status: EntryRow["status"];
   serviceName: string;
-  priceCents: number;
   durationMin: number;
   staffName: string;
   startsAt: string;
@@ -210,7 +212,6 @@ function toView(entry: EntryWithStaff, settings: Settings, now: Date): PublicBoo
   return {
     status: entry.status,
     serviceName: entry.serviceName ?? "",
-    priceCents: entry.priceCents ?? 0,
     durationMin: entry.durationMin ?? 0,
     staffName: entry.staffName,
     startsAt: entry.startsAt.toISOString(),
@@ -249,9 +250,9 @@ export async function cancelByToken(token: string, ctx: { ipHash: string } & Now
   const q = db();
   await rateLimit(q, "token-ip", ctx.ipHash, 60, 600);
   const settings = await getSettings(q);
-  return tx(async (t) => {
+  const result = await tx(async (t) => {
     const entry = await loadByToken(t, token, true);
-    if (entry.status === "cancelled") return toView(entry, settings, now); // idempotente
+    if (entry.status === "cancelled") return { view: toView(entry, settings, now), changed: null }; // idempotente
     if (entry.status !== "confirmed") throw Errors.conflict("Esta marcação já não pode ser cancelada.");
     if (!canModify(entry, settings, now)) {
       throw Errors.forbidden(
@@ -261,8 +262,10 @@ export async function cancelByToken(token: string, ctx: { ipHash: string } & Now
     const [updated] = await t<EntryRow[]>`
       update calendar_entries set status = 'cancelled', cancelled_at = ${now}, cancelled_by = 'customer', updated_at = now()
       where id = ${entry.id} returning *`;
-    return toView({ ...updated, staffName: entry.staffName }, settings, now);
+    return { view: toView({ ...updated, staffName: entry.staffName }, settings, now), changed: updated };
   });
+  if (result.changed) await notifyOwner("cancelled", result.changed);
+  return result.view;
 }
 
 export async function availabilityForToken(
@@ -301,7 +304,7 @@ export async function rescheduleByToken(token: string, startsAtIso: string, ctx:
   const startsAt = new Date(startsAtIso);
   const staffId = (await loadByToken(q, token)).staffId;
   try {
-    return await tx(async (t) => {
+    const result = await tx(async (t) => {
       await lockStaff(t, [staffId]);
       const entry = await loadByToken(t, token, true);
       if (entry.status !== "confirmed") throw Errors.conflict("Esta marcação já não pode ser remarcada.");
@@ -320,8 +323,10 @@ export async function rescheduleByToken(token: string, startsAtIso: string, ctx:
         set starts_at = ${startsAt}, ends_at = ${new Date(startsAt.getTime() + duration * 60_000)},
             reschedule_count = reschedule_count + 1, updated_at = now()
         where id = ${entry.id} returning *`;
-      return toView({ ...updated, staffName: entry.staffName }, settings, now);
+      return { view: toView({ ...updated, staffName: entry.staffName }, settings, now), updated, previousStartsAt: entry.startsAt };
     });
+    await notifyOwner("rescheduled", { ...result.updated, previousStartsAt: result.previousStartsAt });
+    return result.view;
   } catch (e) {
     if (e instanceof SlotUnavailable || isOverlapError(e)) throw Errors.slotTaken();
     throw e;

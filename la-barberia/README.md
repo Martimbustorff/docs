@@ -1,8 +1,8 @@
 # La barberia — plataforma de marcações
 
-Aplicação web (adaptada ao telemóvel) para a **La barberia**, do Carlos, em Cascais. Os clientes marcam sem criar conta; o Carlos gere a agenda numa área privada. Português de Portugal, euros, fuso `Europe/Lisbon` (com mudança de hora).
+Aplicação web (adaptada ao telemóvel) para a **La barberia**, do Carlos, em Cascais. Os clientes escolhem o dia e a hora (marcações de 30 minutos) e indicam nome e telemóvel, sem criar conta nem ver preços; o Carlos vê as marcações por ordem cronológica numa área privada e pode receber um aviso por WhatsApp. Português de Portugal, euros, fuso `Europe/Lisbon` (com mudança de hora).
 
-> **Estado:** funcional e testada localmente (ver [docs/TESTES.md](docs/TESTES.md)). **Ainda não está publicada** e depende de configuração externa (ver [Pendente](#pendente-antes-de-publicar)). Os serviços, preços e horários incluídos são **demonstrativos**.
+> **Estado:** funcional e testada localmente (ver [docs/TESTES.md](docs/TESTES.md)). **Ainda não está publicada** e depende de configuração externa (ver [Pendente](#pendente-antes-de-publicar)). O **horário** incluído é **provisório** (o Carlos tem de o confirmar).
 
 ## Arquitetura (e porquê)
 
@@ -15,7 +15,7 @@ Aplicação web (adaptada ao telemóvel) para a **La barberia**, do Carlos, em C
 | Validação | `zod` | Entrada validada no servidor |
 | Datas | `luxon` | Mudança de hora (23 h/25 h) tratada corretamente |
 
-Dependências de execução: `next`, `react`, `react-dom`, `postgres`, `zod`, `luxon`. Sem fontes, scripts ou mapas de terceiros no site.
+Dependências de execução: `next`, `react`, `react-dom`, `postgres`, `zod`, `luxon`. Sem preços nem emails de clientes (migração `0002_simplify.sql`). Sem fontes, scripts ou mapas de terceiros no site.
 
 **Regra de ouro das marcações:** marcações e bloqueios vivem na **mesma tabela** (`calendar_entries`). Uma *restrição de exclusão* do Postgres (`calendar_entries_no_overlap`) impede sobreposições para o mesmo profissional, mesmo com pedidos simultâneos. Além disso, as escritas são serializadas por profissional (lock consultivo) para evitar *deadlocks*. Ver [docs/MODELO-DE-DADOS.md](docs/MODELO-DE-DADOS.md).
 
@@ -27,7 +27,7 @@ Requisitos: Node 20+ e um Postgres 14+ (extensão `btree_gist`, incluída por om
 npm install
 cp .env.example .env.local          # preencha DATABASE_URL e APP_SECRET (ver comentários)
 npm run db:migrate                  # cria as tabelas
-npm run db:seed:demo                # OPCIONAL: serviços/horários DEMONSTRATIVOS (só em BD local)
+npm run db:seed:demo                # OPCIONAL: Carlos + "Corte de cabelo" (30 min) + horário PROVISÓRIO (só em BD local)
 npm run admin:create -- carlos@exemplo.pt   # cria o administrador (pede a palavra-passe sem eco)
 npm run dev                         # http://localhost:3000
 ```
@@ -56,6 +56,7 @@ Ver [docs/PUBLICACAO.md](docs/PUBLICACAO.md) (alojamento, variáveis de ambiente
 ## Guias
 
 - [Guia do Carlos](docs/GUIA-DO-CARLOS.md) — gerir a agenda no dia a dia
+- [Aviso por WhatsApp](docs/NOTIFICACOES.md)
 - [Cópias de segurança e restauro](docs/BACKUPS.md)
 - [Modelo de dados](docs/MODELO-DE-DADOS.md)
 - [Testes realizados e limitações](docs/TESTES.md)
