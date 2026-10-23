@@ -5,6 +5,3 @@
 # Draft content
 drafts/
 *.draft.mdx
-
-# Aplicação de marcações La barberia (projeto separado, não faz parte da documentação)
-la-barberia/
