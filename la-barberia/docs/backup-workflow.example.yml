@@ -1,0 +1,29 @@
+# Exemplo: cópia semanal cifrada com GitHub Actions. Copiar para .github/workflows/backup.yml
+# do repositório (privado!) e criar os "secrets": DATABASE_URL e BACKUP_PASSPHRASE.
+# Atenção: artefactos ficam no GitHub durante `retention-days`; contêm dados pessoais (cifrados aqui).
+name: backup
+on:
+  schedule: [{ cron: "23 4 * * 0" }]
+  workflow_dispatch:
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente PostgreSQL recente
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /etc/apt/trusted.gpg.d/pgdg.asc >/dev/null
+          sudo apt-get update && sudo apt-get install -y postgresql-client-17
+      - name: Copiar e cifrar
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file=labarberia.dump
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" --symmetric --cipher-algo AES256 labarberia.dump
+          rm labarberia.dump
+      - uses: actions/upload-artifact@v4
+        with:
+          name: labarberia-backup
+          path: labarberia.dump.gpg
+          retention-days: 30
